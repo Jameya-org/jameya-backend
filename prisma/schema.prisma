@@ -1,0 +1,497 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ==========================================
+// ENUMS
+// ==========================================
+
+enum CustomerStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+  BLOCKED
+}
+
+enum KycStatus {
+  NOT_STARTED
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum DocumentType {
+  NATIONAL_ID
+  PASSPORT
+  PROOF_OF_INCOME
+  UTILITY_BILL
+  CAR_LICENSE
+  SYNDICATE_ID
+}
+
+enum DocumentStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum EligibilityStatus {
+  ELIGIBLE
+  INELIGIBLE
+  MANUAL_REVIEW
+}
+
+enum PaymentMethodType {
+  BANK_ACCOUNT
+  DEBIT_CARD
+  CREDIT_CARD
+  VODAFONE_CASH
+  E_WALLET
+}
+
+enum AdminStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+}
+
+enum OtpPurpose {
+  REGISTER
+  LOGIN
+}
+
+enum CycleFrequency {
+  MONTHLY
+  WEEKLY
+  BIWEEKLY
+}
+
+enum CircleStatus {
+  DRAFT
+  UPCOMING
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum MembershipStatus {
+  ACTIVE
+  COMPLETED
+  DEFAULTED
+  CANCELLED
+}
+
+enum InstallmentStatus {
+  PENDING
+  PAID
+  OVERDUE
+  FAILED
+}
+
+enum TransactionType {
+  INSTALLMENT_PAYMENT
+  FEE_PAYMENT
+  REFUND
+}
+
+enum PaymentChannelType {
+  CARD
+  BANK_TRANSFER
+  VODAFONE_CASH
+  INSTAPAY
+  MANUAL_PROOF
+}
+
+enum TransactionStatus {
+  PENDING
+  SETTLED
+  FAILED
+  REJECTED
+}
+
+enum ReviewStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum PayoutStatus {
+  SCHEDULED
+  PROCESSING
+  DISBURSED
+  FAILED
+}
+
+enum LedgerAccount {
+  CUSTOMER_WALLET
+  ESCROW_ACCOUNT
+  FEE_REVENUE
+  PAYOUT_OUTFLOW
+}
+
+// ==========================================
+// CUSTOMER & AUTHENTICATION
+// ==========================================
+
+model Customer {
+  id                   String                 @id @default(uuid()) @db.Uuid
+  status               CustomerStatus         @default(ACTIVE)
+  mobileNumber         String                 @unique @map("mobile_number")
+  email                String?                @map("email")
+  pinHash              String?                @map("pin_hash") // Quick access PIN / Biometric unlock
+  legalName            String?                @map("legal_name")
+  locale               String                 @default("ar")
+  consentVersions      Json                   @default("{}") @map("consent_versions")
+  riskFlags            Json                   @default("[]") @map("risk_flags")
+  createdAt            DateTime               @default(now()) @map("created_at")
+  updatedAt            DateTime               @updatedAt @map("updated_at")
+  deletedAt            DateTime?              @map("deleted_at")
+
+  identityProfile      IdentityProfile?
+  documents            Document[]
+  eligibilityDecisions EligibilityDecision[]
+  paymentMethods       PaymentMethod[]
+  memberships          Membership[]
+  notifications        InAppNotification[]
+  refreshTokens        RefreshToken[]
+
+  @@map("customers")
+}
+
+model IdentityProfile {
+  id                        String      @id @default(uuid()) @db.Uuid
+  customerId                String      @unique @map("customer_id") @db.Uuid
+  dateOfBirth               DateTime    @map("date_of_birth") @db.Date
+  nationalIdentifierToken   String      @map("national_identifier_token")
+  address                   Json
+  kycStatus                 KycStatus   @default(NOT_STARTED) @map("kyc_status")
+  createdAt                 DateTime    @default(now()) @map("created_at")
+  updatedAt                 DateTime    @updatedAt @map("updated_at")
+
+  customer                  Customer    @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@map("identity_profiles")
+}
+
+model Document {
+  id                  String          @id @default(uuid()) @db.Uuid
+  customerId          String          @map("customer_id") @db.Uuid
+  docType             DocumentType    @map("doc_type")
+  encryptedObjectRef  String          @map("encrypted_object_ref")
+  status              DocumentStatus  @default(PENDING)
+  issueDate           DateTime?       @map("issue_date") @db.Date
+  expiryDate          DateTime?       @map("expiry_date") @db.Date
+  reviewResult        String?         @map("review_result")
+  reviewerAdminId     String?         @map("reviewer_admin_id") @db.Uuid
+  submittedAt         DateTime        @default(now()) @map("submitted_at")
+  reviewedAt          DateTime?       @map("reviewed_at")
+
+  customer            Customer        @relation(fields: [customerId], references: [id])
+  reviewerAdmin       AdminUser?      @relation(fields: [reviewerAdminId], references: [id])
+
+  @@map("documents")
+}
+
+model EligibilityDecision {
+  id                 String            @id @default(uuid()) @db.Uuid
+  customerId         String            @map("customer_id") @db.Uuid
+  trustScore         Int               @map("trust_score")
+  participationLimit Decimal           @map("participation_limit") @db.Decimal(12, 2)
+  reasonCodes        Json              @map("reason_codes")
+  policyVersion      String            @map("policy_version")
+  inputsSnapshot     Json              @map("inputs_snapshot")
+  status             EligibilityStatus
+  expiresAt          DateTime          @map("expires_at")
+  overrideAdminId    String?           @map("override_admin_id") @db.Uuid
+  decidedAt          DateTime          @default(now()) @map("decided_at")
+
+  customer           Customer          @relation(fields: [customerId], references: [id])
+  overrideAdmin      AdminUser?        @relation(fields: [overrideAdminId], references: [id])
+
+  @@map("eligibility_decisions")
+}
+
+model PaymentMethod {
+  id                 String            @id @default(uuid()) @db.Uuid
+  customerId         String            @map("customer_id") @db.Uuid
+  providerToken      String            @map("provider_token")
+  type               PaymentMethodType
+  maskedDisplay      String            @map("masked_display")
+  isDefault          Boolean           @default(false) @map("is_default")
+  expiryMetadata     Json?             @map("expiry_metadata")
+  createdAt          DateTime          @default(now()) @map("created_at")
+  removedAt          DateTime?         @map("removed_at")
+
+  customer           Customer          @relation(fields: [customerId], references: [id])
+
+  @@map("payment_methods")
+}
+
+// ==========================================
+// CIRCLES & MEMBERSHIPS
+// ==========================================
+
+model FeePolicy {
+  id             String      @id @default(uuid()) @db.Uuid
+  durationMonths Int         @map("duration_months")
+  positionFees   Json        @map("position_fees")
+  version        String
+  status         AdminStatus @default(ACTIVE)
+  effectiveFrom  DateTime    @map("effective_from")
+  createdAt      DateTime    @default(now()) @map("created_at")
+
+  circles        Circle[]
+
+  @@map("fee_policies")
+}
+
+model Circle {
+  id                  String         @id @default(uuid()) @db.Uuid
+  amount              Decimal        @db.Decimal(12, 2)
+  contributionAmount  Decimal        @map("contribution_amount") @db.Decimal(12, 2)
+  durationMonths      Int            @map("duration_months")
+  cycleFrequency      CycleFrequency @map("cycle_frequency")
+  memberCapacity      Int            @map("member_capacity")
+  currentMembersCount Int            @default(0) @map("current_members_count") // Atomic check field
+  startDate           DateTime       @map("start_date") @db.Date
+  endDate             DateTime       @map("end_date") @db.Date
+  status              CircleStatus   @default(DRAFT)
+  feePolicyId         String         @map("fee_policy_id") @db.Uuid
+  feePolicySnapshot   Json           @map("fee_policy_snapshot")
+  createdAt           DateTime       @default(now()) @map("created_at")
+  updatedAt           DateTime       @updatedAt @map("updated_at")
+
+  feePolicy           FeePolicy      @relation(fields: [feePolicyId], references: [id])
+  memberships         Membership[]
+
+  @@map("circles")
+}
+
+model Membership {
+  id                String           @id @default(uuid()) @db.Uuid
+  customerId        String           @map("customer_id") @db.Uuid
+  circleId          String           @map("circle_id") @db.Uuid
+  payoutPosition    Int              @map("payout_position")
+  status            MembershipStatus @default(ACTIVE)
+  joinedAt          DateTime         @default(now()) @map("joined_at") @db.Date
+  obligationSummary Json             @map("obligation_summary")
+
+  customer          Customer         @relation(fields: [customerId], references: [id])
+  circle            Circle           @relation(fields: [circleId], references: [id])
+  
+  installments      Installment[]
+  contract          Contract?
+  payout            Payout?
+
+  @@unique([circleId, payoutPosition])
+  @@map("memberships")
+}
+
+// ==========================================
+// PAYMENTS, PROOFS & LEDGER
+// ==========================================
+
+model Installment {
+  id           String            @id @default(uuid()) @db.Uuid
+  membershipId String            @map("membership_id") @db.Uuid
+  cycleNumber  Int               @map("cycle_number")
+  dueDate      DateTime          @map("due_date") @db.Date
+  amount       Decimal           @db.Decimal(12, 2)
+  status       InstallmentStatus @default(PENDING)
+  paidDate     DateTime?         @map("paid_date") @db.Date
+
+  membership   Membership        @relation(fields: [membershipId], references: [id])
+  transactions Transaction[]
+
+  @@map("installments")
+}
+
+model Transaction {
+  id                String             @id @default(uuid()) @db.Uuid
+  installmentId     String             @map("installment_id") @db.Uuid
+  type              TransactionType
+  channelType       PaymentChannelType @map("channel_type")
+  amount            Decimal            @db.Decimal(12, 2)
+  currency          String             @default("EGP")
+  status            TransactionStatus  @default(PENDING)
+  failureReason     String?            @map("failure_reason")
+  providerReference String?            @map("provider_reference")
+  idempotencyKey    String             @unique @map("idempotency_key")
+  createdAt         DateTime           @default(now()) @map("created_at")
+  settledAt         DateTime?          @map("settled_at")
+
+  installment       Installment        @relation(fields: [installmentId], references: [id])
+  paymentProof      PaymentProof?
+  ledgerEntries     LedgerEntry[]
+
+  @@map("transactions")
+}
+
+// Manual Vodafone Cash / InstaPay Receipt Verification
+model PaymentProof {
+  id                  String             @id @default(uuid()) @db.Uuid
+  transactionId       String             @unique @map("transaction_id") @db.Uuid
+  paymentChannel      PaymentChannelType @map("payment_channel")
+  proofScreenshotRef  String             @map("proof_screenshot_ref") // Object storage URL/key
+  claimedAmount       Decimal            @map("claimed_amount") @db.Decimal(12, 2)
+  senderMobileOrRef   String             @map("sender_mobile_or_ref") // e.g. Vodafone Cash mobile number
+  reviewStatus        ReviewStatus       @default(PENDING) @map("review_status")
+  reviewerAdminId     String?            @map("reviewer_admin_id") @db.Uuid
+  rejectionReason     String?            @map("rejection_reason")
+  submittedAt         DateTime           @default(now()) @map("submitted_at")
+  reviewedAt          DateTime?          @map("reviewed_at")
+
+  transaction         Transaction        @relation(fields: [transactionId], references: [id])
+  reviewerAdmin       AdminUser?         @relation(fields: [reviewerAdminId], references: [id])
+
+  @@map("payment_proofs")
+}
+
+model Payout {
+  id                String        @id @default(uuid()) @db.Uuid
+  membershipId      String        @unique @map("membership_id") @db.Uuid
+  grossAmount       Decimal       @map("gross_amount") @db.Decimal(12, 2)
+  feeAmount         Decimal       @map("fee_amount") @db.Decimal(12, 2)
+  netAmount         Decimal       @map("net_amount") @db.Decimal(12, 2)
+  beneficiaryToken  String        @map("beneficiary_token")
+  status            PayoutStatus  @default(SCHEDULED)
+  providerReference String?       @map("provider_reference")
+  scheduledAt       DateTime      @map("scheduled_at")
+  disbursedAt       DateTime?     @map("disbursed_at")
+
+  membership        Membership    @relation(fields: [membershipId], references: [id])
+  ledgerEntries     LedgerEntry[]
+
+  @@map("payouts")
+}
+
+model LedgerEntry {
+  id            String        @id @default(uuid()) @db.Uuid
+  transactionId String?       @map("transaction_id") @db.Uuid
+  payoutId      String?       @map("payout_id") @db.Uuid
+  account       LedgerAccount
+  debit         Decimal       @default(0) @db.Decimal(12, 2)
+  credit        Decimal       @default(0) @db.Decimal(12, 2)
+  currency      String        @default("EGP")
+  postedAt      DateTime      @default(now()) @map("posted_at")
+
+  transaction   Transaction?  @relation(fields: [transactionId], references: [id])
+  payout        Payout?       @relation(fields: [payoutId], references: [id])
+
+  @@map("ledger_entries")
+}
+
+model Contract {
+  id                 String     @id @default(uuid()) @db.Uuid
+  membershipId       String     @unique @map("membership_id") @db.Uuid
+  templateVersion    String     @map("template_version")
+  renderedFileRef    String     @map("rendered_file_ref")
+  docHash            String     @map("doc_hash")
+  acceptanceEvidence Json       @map("acceptance_evidence")
+  signatureOtpResult String     @map("signature_otp_result")
+  signedAt           DateTime   @default(now()) @map("signed_at")
+
+  membership         Membership @relation(fields: [membershipId], references: [id])
+
+  @@map("contracts")
+}
+
+// ==========================================
+// IN-APP NOTIFICATIONS & ADMIN
+// ==========================================
+
+model InAppNotification {
+  id         String   @id @default(uuid()) @db.Uuid
+  customerId String   @map("customer_id") @db.Uuid
+  title      String
+  body       String
+  isRead     Boolean  @default(false) @map("is_read")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  customer   Customer @relation(fields: [customerId], references: [id])
+
+  @@map("in_app_notifications")
+}
+
+model AdminUser {
+  id                   String                @id @default(uuid()) @db.Uuid
+  email                String                @unique
+  passwordHash         String                @map("password_hash")
+  roleId               String                @map("role_id") @db.Uuid
+  status               AdminStatus           @default(ACTIVE)
+  mfaEnabled           Boolean               @default(true) @map("mfa_enabled")
+  lastLoginAt          DateTime?             @map("last_login_at")
+  createdAt            DateTime              @default(now()) @map("created_at")
+
+  role                 Role                  @relation(fields: [roleId], references: [id])
+  auditEvents          AuditEvent[]
+  reviewedDocuments    Document[]
+  overrideEligibility  EligibilityDecision[]
+  reviewedProofs       PaymentProof[]
+  refreshTokens        RefreshToken[]
+
+  @@map("admin_users")
+}
+
+model Role {
+  id          String      @id @default(uuid()) @db.Uuid
+  name        String      @unique
+  permissions String[]
+
+  adminUsers  AdminUser[]
+
+  @@map("roles")
+}
+
+model AuditEvent {
+  id            String     @id @default(uuid()) @db.Uuid
+  actorAdminId  String?    @map("actor_admin_id") @db.Uuid
+  action        String
+  entityType    String     @map("entity_type")
+  entityId      String     @map("entity_id") @db.Uuid
+  oldValue      Json?      @map("old_value")
+  newValue      Json?      @map("new_value")
+  reason        String?
+  ipAddress     String     @map("ip_address")
+  deviceInfo    String     @map("device_info")
+  correlationId String     @map("correlation_id")
+  occurredAt    DateTime   @default(now()) @map("occurred_at")
+
+  actorAdmin    AdminUser? @relation(fields: [actorAdminId], references: [id])
+
+  @@map("audit_events")
+}
+
+model RefreshToken {
+  id         String    @id @default(uuid()) @db.Uuid
+  customerId String?   @map("customer_id") @db.Uuid
+  adminId    String?   @map("admin_id") @db.Uuid
+  tokenHash  String    @unique @map("token_hash")
+  expiresAt  DateTime  @map("expires_at")
+  revokedAt  DateTime? @map("revoked_at")
+  deviceInfo String    @map("device_info")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  customer   Customer?  @relation(fields: [customerId], references: [id])
+  admin      AdminUser? @relation(fields: [adminId], references: [id])
+
+  @@map("refresh_tokens")
+}
+
+model OtpChallenge {
+  id           String     @id @default(uuid()) @db.Uuid
+  mobileNumber String     @map("mobile_number")
+  codeHash     String     @map("code_hash")
+  purpose      OtpPurpose
+  expiresAt    DateTime   @map("expires_at")
+  consumedAt   DateTime?  @map("consumed_at")
+  attempts     Int        @default(0)
+  createdAt    DateTime   @default(now()) @map("created_at")
+
+  @@index([mobileNumber, purpose])
+  @@map("otp_challenges")
+}

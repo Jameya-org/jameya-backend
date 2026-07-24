@@ -1,0 +1,24 @@
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: jameya_db_dev
+    restart: always
+    environment:
+      POSTGRES_USER: jameya_dev
+      POSTGRES_PASSWORD: jameya_dev_password
+      POSTGRES_DB: jameya_dev_db
+    ports:
+      - '5422:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  adminer:
+    image: adminer:latest
+    container_name: jameya_adminer_dev
+    restart: always
+    ports:
+      - '8080:8080'
+
+volumes:
+  postgres_data:
