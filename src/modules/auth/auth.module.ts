@@ -1,24 +1,28 @@
 import { Module } from '@nestjs/common';
+import { JwtModule } from '@nestjs/jwt';
+import { PassportModule } from '@nestjs/passport';
+import { ConfigModule } from '@nestjs/config';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
-import { OtpRepository } from './otp/otp.repository';
-import { OtpService } from './otp/otp.service';
-import { RefreshTokenRepository } from './tokens/refresh-token.repository';
-import { TokenService } from './tokens/token.service';
-import { AdminJwtStrategy } from './strategies/admin-jwt.strategy';
 import { JwtStrategy } from './strategies/jwt.strategy';
+import { JwtRefreshStrategy } from './strategies/jwt-refresh.strategy';
+import { OtpProviderFactory } from './providers/otp.factory';
+import { ConsoleOtpService } from './providers/console-otp.service';
 
 @Module({
+  imports: [
+    PassportModule.register({ defaultStrategy: 'jwt' }),
+    JwtModule.register({}),
+    ConfigModule,
+  ],
   controllers: [AuthController],
   providers: [
     AuthService,
-    OtpService,
-    OtpRepository,
-    TokenService,
-    RefreshTokenRepository,
     JwtStrategy,
-    AdminJwtStrategy,
+    JwtRefreshStrategy,
+    ConsoleOtpService,
+    OtpProviderFactory,
   ],
-  exports: [AuthService, TokenService],
+  exports: [AuthService, JwtStrategy, JwtRefreshStrategy, PassportModule],
 })
 export class AuthModule {}

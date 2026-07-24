@@ -59,11 +59,6 @@ enum AdminStatus {
   SUSPENDED
 }
 
-enum OtpPurpose {
-  REGISTER
-  LOGIN
-}
-
 enum CycleFrequency {
   MONTHLY
   WEEKLY
@@ -145,8 +140,8 @@ model Customer {
   pinHash              String?                @map("pin_hash") // Quick access PIN / Biometric unlock
   legalName            String?                @map("legal_name")
   locale               String                 @default("ar")
-  consentVersions      Json                   @default("{}") @map("consent_versions")
-  riskFlags            Json                   @default("[]") @map("risk_flags")
+  consentVersions      Json?                  @default("{}") @map("consent_versions")
+  riskFlags            Json?                  @default("[]") @map("risk_flags")
   createdAt            DateTime               @default(now()) @map("created_at")
   updatedAt            DateTime               @updatedAt @map("updated_at")
   deletedAt            DateTime?              @map("deleted_at")
@@ -241,7 +236,7 @@ model FeePolicy {
   positionFees   Json        @map("position_fees")
   version        String
   status         AdminStatus @default(ACTIVE)
-  effectiveFrom  DateTime    @map("effective_from")
+  effectiveFrom  DateTime    @default(now()) @map("effective_from")
   createdAt      DateTime    @default(now()) @map("created_at")
 
   circles        Circle[]
@@ -254,12 +249,12 @@ model Circle {
   amount              Decimal        @db.Decimal(12, 2)
   contributionAmount  Decimal        @map("contribution_amount") @db.Decimal(12, 2)
   durationMonths      Int            @map("duration_months")
-  cycleFrequency      CycleFrequency @map("cycle_frequency")
+  cycleFrequency      CycleFrequency @default(MONTHLY) @map("cycle_frequency")
   memberCapacity      Int            @map("member_capacity")
   currentMembersCount Int            @default(0) @map("current_members_count") // Atomic check field
   startDate           DateTime       @map("start_date") @db.Date
   endDate             DateTime       @map("end_date") @db.Date
-  status              CircleStatus   @default(DRAFT)
+  status              CircleStatus   @default(UPCOMING)
   feePolicyId         String         @map("fee_policy_id") @db.Uuid
   feePolicySnapshot   Json           @map("fee_policy_snapshot")
   createdAt           DateTime       @default(now()) @map("created_at")
@@ -278,7 +273,7 @@ model Membership {
   payoutPosition    Int              @map("payout_position")
   status            MembershipStatus @default(ACTIVE)
   joinedAt          DateTime         @default(now()) @map("joined_at") @db.Date
-  obligationSummary Json             @map("obligation_summary")
+  obligationSummary Json?            @map("obligation_summary")
 
   customer          Customer         @relation(fields: [customerId], references: [id])
   circle            Circle           @relation(fields: [circleId], references: [id])
@@ -336,9 +331,9 @@ model PaymentProof {
   id                  String             @id @default(uuid()) @db.Uuid
   transactionId       String             @unique @map("transaction_id") @db.Uuid
   paymentChannel      PaymentChannelType @map("payment_channel")
-  proofScreenshotRef  String             @map("proof_screenshot_ref") // Object storage URL/key
+  proofScreenshotRef  String             @map("proof_screenshot_ref")
   claimedAmount       Decimal            @map("claimed_amount") @db.Decimal(12, 2)
-  senderMobileOrRef   String             @map("sender_mobile_or_ref") // e.g. Vodafone Cash mobile number
+  senderMobileOrRef   String             @map("sender_mobile_or_ref")
   reviewStatus        ReviewStatus       @default(PENDING) @map("review_status")
   reviewerAdminId     String?            @map("reviewer_admin_id") @db.Uuid
   rejectionReason     String?            @map("rejection_reason")
@@ -456,9 +451,9 @@ model AuditEvent {
   oldValue      Json?      @map("old_value")
   newValue      Json?      @map("new_value")
   reason        String?
-  ipAddress     String     @map("ip_address")
-  deviceInfo    String     @map("device_info")
-  correlationId String     @map("correlation_id")
+  ipAddress     String?    @map("ip_address")
+  deviceInfo    String?    @map("device_info")
+  correlationId String?    @map("correlation_id")
   occurredAt    DateTime   @default(now()) @map("occurred_at")
 
   actorAdmin    AdminUser? @relation(fields: [actorAdminId], references: [id])
@@ -473,25 +468,11 @@ model RefreshToken {
   tokenHash  String    @unique @map("token_hash")
   expiresAt  DateTime  @map("expires_at")
   revokedAt  DateTime? @map("revoked_at")
-  deviceInfo String    @map("device_info")
+  deviceInfo String?   @map("device_info")
   createdAt  DateTime  @default(now()) @map("created_at")
 
   customer   Customer?  @relation(fields: [customerId], references: [id])
   admin      AdminUser? @relation(fields: [adminId], references: [id])
 
   @@map("refresh_tokens")
-}
-
-model OtpChallenge {
-  id           String     @id @default(uuid()) @db.Uuid
-  mobileNumber String     @map("mobile_number")
-  codeHash     String     @map("code_hash")
-  purpose      OtpPurpose
-  expiresAt    DateTime   @map("expires_at")
-  consumedAt   DateTime?  @map("consumed_at")
-  attempts     Int        @default(0)
-  createdAt    DateTime   @default(now()) @map("created_at")
-
-  @@index([mobileNumber, purpose])
-  @@map("otp_challenges")
 }
