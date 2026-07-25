@@ -22,18 +22,22 @@ export class AuthService {
   ) {}
 
   /**
-   * Generates and sends a 6-digit OTP code to the requested phone number
+   * Generates and sends a 6-digit OTP code to the requested email or mobile number
    */
-  async requestOtp(mobileNumber: string) {
+  async requestOtp(target: string) {
+    if (!target) {
+      throw new BadRequestException('Email is required');
+    }
+
     // 1. Generate 6-digit OTP
     const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
     const expiresAt = Date.now() + 5 * 60 * 1000; // 5 Minutes Validity
 
     // 2. Save OTP code
-    otpStore.set(mobileNumber, { code: otpCode, expiresAt });
+    otpStore.set(target, { code: otpCode, expiresAt });
 
     // 3. Dispatch via configured OTP Provider
-    await this.otpProvider.sendOtp(mobileNumber, otpCode);
+    await this.otpProvider.sendOtp(target, otpCode);
 
     return { message: 'OTP verification code sent successfully' };
   }
@@ -41,16 +45,20 @@ export class AuthService {
   /**
    * Verifies OTP, upserts customer, and returns JWT Access & Refresh token pair
    */
-  async verifyOtp(mobileNumber: string, otp: string) {
-    const cachedOtp = otpStore.get(mobileNumber);
+  async verifyOtp(target: string, otp: string) {
+    if (!target) {
+      throw new BadRequestException('Email is required');
+    }
+
+    const cachedOtp = otpStore.get(target);
 
     // 1. Validate OTP presence & expiration
     if (!cachedOtp) {
-      throw new BadRequestException('No OTP requested for this phone number');
+      throw new BadRequestException('No OTP requested for this address');
     }
 
     if (Date.now() > cachedOtp.expiresAt) {
-      otpStore.delete(mobileNumber);
+      otpStore.delete(target);
       throw new BadRequestException('OTP code has expired');
     }
 
@@ -59,24 +67,26 @@ export class AuthService {
     }
 
     // Clear used OTP
-    otpStore.delete(mobileNumber);
+    otpStore.delete(target);
 
     // 2. Upsert Customer (Create if new, fetch if existing)
-    let customer = await this.prisma.customer.findUnique({
-      where: { mobileNumber },
-    });
+    const isEmail = target.includes('@');
+    let customer = isEmail
+      ? await this.prisma.customer.findFirst({ where: { email: target } })
+      : await this.prisma.customer.findUnique({ where: { mobileNumber: target } });
 
     if (!customer) {
       customer = await this.prisma.customer.create({
         data: {
-          mobileNumber,
+          mobileNumber: isEmail ? `email_${Date.now()}` : target,
+          email: isEmail ? target : null,
           status: 'ACTIVE',
         },
       });
     }
 
     // 3. Generate Access Token & Refresh Token Pair
-    return this.generateTokens(customer.id, customer.mobileNumber);
+    return this.generateTokens(customer.id, customer.email || customer.mobileNumber);
   }
 
   /**
@@ -145,8 +155,8 @@ export class AuthService {
   /**
    * Helper: Signs JWT pair and persists hashed Refresh Token in DB
    */
-  private async generateTokens(customerId: string, mobileNumber: string) {
-    const payload = { sub: customerId, mobileNumber };
+  private async generateTokens(customerId: string, identifier: string) {
+    const payload = { sub: customerId, identifier };
 
     const accessExpiresIn = (this.configService.get<string>('JWT_ACCESS_EXPIRATION') || '15m') as any;
     const refreshExpiresIn = (this.configService.get<string>('JWT_REFRESH_EXPIRATION') || '30d') as any;

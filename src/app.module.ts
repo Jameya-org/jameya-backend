@@ -1,11 +1,31 @@
 import { Module } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { MailerModule } from '@nestjs-modules/mailer';
+import { ScheduleModule } from '@nestjs/schedule'; // 1. Import ScheduleModule
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './modules/auth/auth.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    ScheduleModule.forRoot(), // 2. Enable scheduling
+    MailerModule.forRootAsync({
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => ({
+        transport: {
+          host: config.get<string>('SMTP_HOST', 'smtp.gmail.com'),
+          port: config.get<number>('SMTP_PORT', 587),
+          secure: false,
+          auth: {
+            user: config.get<string>('SMTP_USER'),
+            pass: config.get<string>('SMTP_PASS'),
+          },
+        },
+        defaults: {
+          from: `"Jameya Support" <${config.get<string>('SMTP_FROM', 'no-reply@jameya.app')}>`,
+        },
+      }),
+    }),
     PrismaModule,
     AuthModule,
   ],

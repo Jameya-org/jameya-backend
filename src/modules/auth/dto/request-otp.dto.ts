@@ -1,12 +1,13 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsNotEmpty, IsPhoneNumber } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsEmail, IsOptional, IsPhoneNumber } from 'class-validator';
 
 export class RequestOtpDto {
   @ApiProperty({
-    description: 'Mobile number in international E.164 format',
-    example: '+201012345678',
+    description: 'Email address for OTP delivery',
+    example: 'user@example.com',
+    required: false,
   })
-  @IsNotEmpty()
-  @IsPhoneNumber()
-  mobileNumber: string;
+  @IsOptional()
+  @IsEmail()
+  email?: string;
 }

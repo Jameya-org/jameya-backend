@@ -8,7 +8,8 @@ import { JwtStrategy } from './strategies/jwt.strategy';
 import { JwtRefreshStrategy } from './strategies/jwt-refresh.strategy';
 import { OtpProviderFactory } from './providers/otp.factory';
 import { ConsoleOtpService } from './providers/console-otp.service';
-
+import { EmailOtpService } from './providers/email-otp.service';
+import { SessionCleanupService } from './services/session-cleanup.service';
 @Module({
   imports: [
     PassportModule.register({ defaultStrategy: 'jwt' }),
@@ -21,8 +22,10 @@ import { ConsoleOtpService } from './providers/console-otp.service';
     JwtStrategy,
     JwtRefreshStrategy,
     ConsoleOtpService,
+    EmailOtpService,
+    SessionCleanupService,
     OtpProviderFactory,
   ],
-  exports: [AuthService, JwtStrategy, JwtRefreshStrategy, PassportModule],
+  exports: [AuthService, JwtStrategy, JwtRefreshStrategy, PassportModule, 'OTP_PROVIDER'],
 })
 export class AuthModule {}

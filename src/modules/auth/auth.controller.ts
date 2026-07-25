@@ -1,4 +1,4 @@
-import { Controller, Post, Body, HttpCode, HttpStatus, UseGuards, Req } from '@nestjs/common';
+import { Controller, Post, Body, HttpCode, HttpStatus, UseGuards, Req, BadRequestException } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
 import { RequestOtpDto } from './dto/request-otp.dto';
@@ -13,10 +13,14 @@ export class AuthController {
 
   @Post('request-otp')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Request a phone verification OTP code' })
+  @ApiOperation({ summary: 'Request an OTP verification code via Email' })
   @ApiResponse({ status: 200, description: 'OTP sent successfully' })
   async requestOtp(@Body() dto: RequestOtpDto) {
-    return this.authService.requestOtp(dto.mobileNumber);
+    const target = dto.email;
+    if (!target) {
+      throw new BadRequestException('Email is required');
+    }
+    return this.authService.requestOtp(target);
   }
 
   @Post('verify-otp')
@@ -25,7 +29,11 @@ export class AuthController {
   @ApiResponse({ status: 200, description: 'Authenticated successfully' })
   @ApiResponse({ status: 400, description: 'Invalid or expired OTP' })
   async verifyOtp(@Body() dto: VerifyOtpDto) {
-    return this.authService.verifyOtp(dto.mobileNumber, dto.otp);
+    const target = dto.email;
+    if (!target) {
+      throw new BadRequestException('Email is required');
+    }
+    return this.authService.verifyOtp(target, dto.otp);
   }
 
   @Post('refresh')

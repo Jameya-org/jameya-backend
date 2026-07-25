@@ -1,23 +1,22 @@
 import { ConfigService } from '@nestjs/config';
-import { ConsoleOtpService } from './console-otp.service';
 import { IOtpProvider } from './otp-provider.interface';
-// import { WhatsAppOtpService } from './whatsapp-otp.service';
+import { EmailOtpService } from './email-otp.service';
+import { ConsoleOtpService } from './console-otp.service';
 
 export const OtpProviderFactory = {
   provide: 'OTP_PROVIDER',
-  useFactory: (configService: ConfigService): IOtpProvider => {
-    const driver = configService.get<string>('OTP_DRIVER', 'console');
-    
-    // Easily add 'whatsapp' or 'email' implementations here in the future
-    if (driver === 'console') {
-      return new ConsoleOtpService();
+  useFactory: (
+    configService: ConfigService,
+    emailOtp: EmailOtpService,
+    consoleOtp: ConsoleOtpService,
+  ): IOtpProvider => {
+    const driver = configService.get<string>('OTP_DRIVER', 'email');
+
+    if (driver === 'email') {
+      return emailOtp;
     }
 
-    if (driver === 'whatsapp') {
-      // return new WhatsAppOtpService();
-    }
-    
-    return new ConsoleOtpService();
+    return consoleOtp;
   },
-  inject: [ConfigService],
+  inject: [ConfigService, EmailOtpService, ConsoleOtpService],
 };
