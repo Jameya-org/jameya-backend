@@ -4,11 +4,13 @@ import { MailerModule } from '@nestjs-modules/mailer';
 import { ScheduleModule } from '@nestjs/schedule'; // 1. Import ScheduleModule
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './modules/auth/auth.module';
+import { CirclesModule } from './modules/circles/circles.module';
+import { AdminModule } from './modules/admin/admin.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
-    ScheduleModule.forRoot(), // 2. Enable scheduling
+    ScheduleModule.forRoot(),
     MailerModule.forRootAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
@@ -28,6 +30,8 @@ import { AuthModule } from './modules/auth/auth.module';
     }),
     PrismaModule,
     AuthModule,
+    CirclesModule,
+    AdminModule,
   ],
 })
 export class AppModule {}

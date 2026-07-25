@@ -41,8 +41,38 @@ async function main(): Promise<void> {
     },
   });
 
+  // Seed a default fee policy for testing circle creation
+  let feePolicy = await prisma.feePolicy.findFirst({
+    where: { version: 'v1-dev' },
+  });
+
+  if (!feePolicy) {
+    feePolicy = await prisma.feePolicy.create({
+      data: {
+        version: 'v1-dev',
+        durationMonths: 10,
+        // positionFees: fee percentages per payout position (position 1 = first to receive)
+        positionFees: {
+          1: 5,   // 5% fee for first payout position
+          2: 4,
+          3: 3,
+          4: 3,
+          5: 2,
+          6: 2,
+          7: 1,
+          8: 1,
+          9: 1,
+          10: 0,  // Last position pays no fee
+        },
+        status: 'ACTIVE',
+      },
+    });
+  }
+
   console.log(`Seeded role: ${SUPER_ADMIN_ROLE}`);
   console.log(`Seeded admin: ${adminEmail}`);
+  console.log(`Seeded fee policy: ${feePolicy.version} (id: ${feePolicy.id})`);
+  console.log(`\n📋 Use this feePolicyId when testing circle creation:\n   ${feePolicy.id}`);
 }
 
 main()
