@@ -128,6 +128,12 @@ enum LedgerAccount {
   PAYOUT_OUTFLOW
 }
 
+enum FeePolicyStatus {
+  DRAFT
+  ACTIVE
+  RETIRED
+}
+
 // ==========================================
 // CUSTOMER & AUTHENTICATION
 // ==========================================
@@ -231,13 +237,13 @@ model PaymentMethod {
 // ==========================================
 
 model FeePolicy {
-  id             String      @id @default(uuid()) @db.Uuid
-  durationMonths Int         @map("duration_months")
-  positionFees   Json        @map("position_fees")
+  id             String          @id @default(uuid()) @db.Uuid
+  durationMonths Int             @map("duration_months")
+  positionFees   Json            @map("position_fees")
   version        String
-  status         AdminStatus @default(ACTIVE)
-  effectiveFrom  DateTime    @default(now()) @map("effective_from")
-  createdAt      DateTime    @default(now()) @map("created_at")
+  status         FeePolicyStatus @default(DRAFT) @map("status")
+  effectiveFrom  DateTime        @default(now()) @map("effective_from")
+  createdAt      DateTime        @default(now()) @map("created_at")
 
   circles        Circle[]
 
@@ -459,6 +465,23 @@ model AuditEvent {
   actorAdmin    AdminUser? @relation(fields: [actorAdminId], references: [id])
 
   @@map("audit_events")
+}
+
+// DB-backed OTP store — replaces in-memory Map for hashing, attempt counting, cooldown
+model OtpRequest {
+  id             String    @id @default(uuid()) @db.Uuid
+  target         String    // email or phone number
+  purpose        String    // 'registration' | 'login' | 'admin_mfa'
+  codeHash       String    @map("code_hash") // bcrypt hash of the OTP code
+  attempts       Int       @default(0) // failed verification attempts
+  maxAttempts    Int       @default(5) @map("max_attempts")
+  expiresAt      DateTime  @map("expires_at")
+  cooldownUntil  DateTime? @map("cooldown_until") // earliest next resend allowed
+  usedAt         DateTime? @map("used_at") // set when successfully verified
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  @@index([target, purpose])
+  @@map("otp_requests")
 }
 
 model RefreshToken {

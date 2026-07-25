@@ -10,8 +10,6 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import type { IOtpProvider } from './providers/otp-provider.interface';
 import * as bcrypt from 'bcrypt';
 
-const otpStore = new Map<string, { code: string; expiresAt: number }>();
-
 @Injectable()
 export class AuthService {
   constructor(
@@ -22,70 +20,151 @@ export class AuthService {
   ) {}
 
   /**
-   * Generates and sends a 6-digit OTP code to the requested email or mobile number
+   * Determines the logical OTP purpose ('login' | 'registration') if not explicitly provided.
    */
-  async requestOtp(target: string) {
-    if (!target) {
-      throw new BadRequestException('Email is required');
-    }
+  private async resolvePurpose(target: string, purposeInput?: string): Promise<string> {
+    if (purposeInput) return purposeInput;
+    const isEmail = target.includes('@');
+    const existing = isEmail
+      ? await this.prisma.customer.findFirst({ where: { email: target } })
+      : await this.prisma.customer.findUnique({ where: { mobileNumber: target } });
 
-    // 1. Generate 6-digit OTP
-    const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
-    const expiresAt = Date.now() + 5 * 60 * 1000; // 5 Minutes Validity
-
-    // 2. Save OTP code
-    otpStore.set(target, { code: otpCode, expiresAt });
-
-    // 3. Dispatch via configured OTP Provider
-    await this.otpProvider.sendOtp(target, otpCode);
-
-    return { message: 'OTP verification code sent successfully' };
+    return existing ? 'login' : 'registration';
   }
 
   /**
-   * Verifies OTP, upserts customer, and returns JWT Access & Refresh token pair
+   * Generates and sends a 6-digit OTP code stored securely in DB as a bcrypt hash with cooldown and expiry.
    */
-  async verifyOtp(target: string, otp: string) {
+  async requestOtp(target: string, purposeInput?: string) {
     if (!target) {
-      throw new BadRequestException('Email is required');
+      throw new BadRequestException('Email or mobile number is required');
     }
 
-    const cachedOtp = otpStore.get(target);
+    const purpose = await this.resolvePurpose(target, purposeInput);
+    const now = new Date();
 
-    // 1. Validate OTP presence & expiration
-    if (!cachedOtp) {
-      throw new BadRequestException('No OTP requested for this address');
+    // 1. Check for active resend cooldown
+    const existingCooldown = await this.prisma.otpRequest.findFirst({
+      where: {
+        target,
+        purpose,
+        usedAt: null,
+        cooldownUntil: { gt: now },
+      },
+    });
+
+    if (existingCooldown) {
+      throw new BadRequestException(
+        'Please wait before requesting another OTP code (cooldown active)',
+      );
     }
 
-    if (Date.now() > cachedOtp.expiresAt) {
-      otpStore.delete(target);
-      throw new BadRequestException('OTP code has expired');
+    // 2. Generate 6-digit OTP code & hash it
+    const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+    const codeHash = await bcrypt.hash(otpCode, 10);
+
+    const expiresAt = new Date(now.getTime() + 5 * 60 * 1000); // 5 minutes
+    const cooldownUntil = new Date(now.getTime() + 60 * 1000); // 60 seconds
+
+    // 3. Save OTP request record to DB
+    await this.prisma.otpRequest.create({
+      data: {
+        target,
+        purpose,
+        codeHash,
+        expiresAt,
+        cooldownUntil,
+        maxAttempts: 5,
+      },
+    });
+
+    // 4. Dispatch via configured OTP Provider
+    await this.otpProvider.sendOtp(target, otpCode);
+
+    return { message: 'OTP verification code sent successfully', purpose };
+  }
+
+  /**
+   * Verifies OTP against DB-stored hash, enforces attempt limits & purpose matching, upserts customer, and returns JWT tokens.
+   */
+  async verifyOtp(target: string, otp: string, purposeInput?: string) {
+    if (!target) {
+      throw new BadRequestException('Email or mobile number is required');
     }
 
-    if (cachedOtp.code !== otp) {
+    const purpose = await this.resolvePurpose(target, purposeInput);
+    const now = new Date();
+
+    // 1. Find latest active, unexpired, unused OTP record matching target + purpose
+    const otpRecord = await this.prisma.otpRequest.findFirst({
+      where: {
+        target,
+        purpose,
+        usedAt: null,
+        expiresAt: { gt: now },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    if (!otpRecord) {
+      throw new BadRequestException(
+        'No valid or unexpired OTP found for this request. Please request a new OTP code.',
+      );
+    }
+
+    // 2. Enforce max verification attempt limits
+    if (otpRecord.attempts >= otpRecord.maxAttempts) {
+      throw new BadRequestException(
+        'OTP verification attempt limit exceeded. Please request a new OTP code.',
+      );
+    }
+
+    // 3. Verify OTP hash
+    const isMatch = await bcrypt.compare(otp, otpRecord.codeHash);
+    if (!isMatch) {
+      // Increment attempt counter on failed verification
+      await this.prisma.otpRequest.update({
+        where: { id: otpRecord.id },
+        data: { attempts: { increment: 1 } },
+      });
+
       throw new BadRequestException('Invalid OTP code');
     }
 
-    // Clear used OTP
-    otpStore.delete(target);
+    // 4. Mark OTP record as used
+    await this.prisma.otpRequest.update({
+      where: { id: otpRecord.id },
+      data: { usedAt: now },
+    });
 
-    // 2. Upsert Customer (Create if new, fetch if existing)
+    // 5. Upsert Customer (with DB-level unique constraint handling for race conditions)
     const isEmail = target.includes('@');
     let customer = isEmail
       ? await this.prisma.customer.findFirst({ where: { email: target } })
       : await this.prisma.customer.findUnique({ where: { mobileNumber: target } });
 
     if (!customer) {
-      customer = await this.prisma.customer.create({
-        data: {
-          mobileNumber: isEmail ? `email_${Date.now()}` : target,
-          email: isEmail ? target : null,
-          status: 'ACTIVE',
-        },
-      });
+      try {
+        customer = await this.prisma.customer.create({
+          data: {
+            mobileNumber: isEmail
+              ? `email_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`
+              : target,
+            email: isEmail ? target : null,
+            status: 'ACTIVE',
+          },
+        });
+      } catch (err) {
+        // Fallback for concurrent insertion race condition (DB unique constraint violation P2002)
+        customer = isEmail
+          ? await this.prisma.customer.findFirst({ where: { email: target } })
+          : await this.prisma.customer.findUnique({ where: { mobileNumber: target } });
+
+        if (!customer) throw err;
+      }
     }
 
-    // 3. Generate Access Token & Refresh Token Pair
+    // 6. Generate Access & Refresh Token pair
     return this.generateTokens(customer.id, customer.email || customer.mobileNumber);
   }
 
@@ -98,7 +177,7 @@ export class AuthService {
       payload = this.jwtService.verify(refreshToken, {
         secret: this.configService.get<string>('JWT_REFRESH_SECRET'),
       });
-    } catch (e) {
+    } catch {
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
 
@@ -132,7 +211,7 @@ export class AuthService {
     });
 
     // 4. Issue new token pair
-    return this.generateTokens(payload.sub, payload.mobileNumber);
+    return this.generateTokens(payload.sub, payload.identifier || payload.mobileNumber);
   }
 
   /**
@@ -144,8 +223,8 @@ export class AuthService {
         customerId,
         revokedAt: null,
       },
-      data: { 
-        revokedAt: new Date() 
+      data: {
+        revokedAt: new Date(),
       },
     });
 

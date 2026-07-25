@@ -22,11 +22,14 @@ import { AdminJwtRefreshStrategy } from './auth/strategies/admin-jwt-refresh.str
 import { AdminCirclesController } from './circles/admin-circles.controller';
 import { CirclesModule } from '../circles/circles.module';
 
+import { AuditModule } from './audit/audit.module';
+
 @Module({
   imports: [
     PassportModule,
     JwtModule.register({}),
     CirclesModule,
+    AuditModule,
   ],
   controllers: [
     AdminAuthController,
@@ -41,8 +44,7 @@ import { CirclesModule } from '../circles/circles.module';
     AdminJwtRefreshStrategy,
     AdminUsersService,
     RolesService,
-    AuditService,
   ],
-  exports: [AdminAuthService, AdminUsersService, RolesService, AuditService],
+  exports: [AdminAuthService, AdminUsersService, RolesService, AuditModule],
 })
 export class AdminModule {}

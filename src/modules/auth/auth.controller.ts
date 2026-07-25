@@ -20,7 +20,7 @@ export class AuthController {
     if (!target) {
       throw new BadRequestException('Email is required');
     }
-    return this.authService.requestOtp(target);
+    return this.authService.requestOtp(target, dto.purpose);
   }
 
   @Post('verify-otp')
@@ -33,7 +33,7 @@ export class AuthController {
     if (!target) {
       throw new BadRequestException('Email is required');
     }
-    return this.authService.verifyOtp(target, dto.otp);
+    return this.authService.verifyOtp(target, dto.otp, dto.purpose);
   }
 
   @Post('refresh')

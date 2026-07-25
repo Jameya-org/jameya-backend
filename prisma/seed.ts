@@ -41,38 +41,79 @@ async function main(): Promise<void> {
     },
   });
 
-  // Seed a default fee policy for testing circle creation
-  let feePolicy = await prisma.feePolicy.findFirst({
-    where: { version: 'v1-dev' },
-  });
+  // Seed default ACTIVE fee policies according to exact Jameya 12-Month, 10-Month, and 6-Month Fee Tables
+  const defaultPolicies = [
+    {
+      version: 'v1.0-6m',
+      durationMonths: 6,
+      positionFees: {
+        '1': 8.0,
+        '2': 7.0,
+        '3': 4.0,
+        '4': 0.0,
+        '5': -15.0,
+        '6': -24.0,
+      },
+    },
+    {
+      version: 'v1.0-10m',
+      durationMonths: 10,
+      positionFees: {
+        '1': 14.0,
+        '2': 12.0,
+        '3': 10.0,
+        '4': 8.0,
+        '5': 6.0,
+        '6': 0.0,
+        '7': 0.0,
+        '8': -5.0,
+        '9': -7.0,
+        '10': -10.0,
+      },
+    },
+    {
+      version: 'v1.0-12m',
+      durationMonths: 12,
+      positionFees: {
+        '1': 16.0,
+        '2': 14.0,
+        '3': 12.0,
+        '4': 10.0,
+        '5': 8.0,
+        '6': 6.0,
+        '7': 0.0,
+        '8': 0.0,
+        '9': 0.0,
+        '10': -7.0,
+        '11': -10.0,
+        '12': -12.0,
+      },
+    },
+  ];
 
-  if (!feePolicy) {
-    feePolicy = await prisma.feePolicy.create({
+  for (const policyData of defaultPolicies) {
+    await prisma.feePolicy.updateMany({
+      where: { durationMonths: policyData.durationMonths, status: 'ACTIVE' },
+      data: { status: 'RETIRED' },
+    });
+
+    const created = await prisma.feePolicy.create({
       data: {
-        version: 'v1-dev',
-        durationMonths: 10,
-        // positionFees: fee percentages per payout position (position 1 = first to receive)
-        positionFees: {
-          1: 5,   // 5% fee for first payout position
-          2: 4,
-          3: 3,
-          4: 3,
-          5: 2,
-          6: 2,
-          7: 1,
-          8: 1,
-          9: 1,
-          10: 0,  // Last position pays no fee
-        },
+        version: policyData.version,
+        durationMonths: policyData.durationMonths,
+        positionFees: policyData.positionFees,
         status: 'ACTIVE',
+        effectiveFrom: new Date(),
       },
     });
+
+    console.log(
+      `Seeded ACTIVE fee policy for ${policyData.durationMonths}m: ${created.version} (id: ${created.id})`,
+    );
   }
 
-  console.log(`Seeded role: ${SUPER_ADMIN_ROLE}`);
+  console.log(`\nSeeded role: ${SUPER_ADMIN_ROLE}`);
   console.log(`Seeded admin: ${adminEmail}`);
-  console.log(`Seeded fee policy: ${feePolicy.version} (id: ${feePolicy.id})`);
-  console.log(`\n📋 Use this feePolicyId when testing circle creation:\n   ${feePolicy.id}`);
 }
 
 main()

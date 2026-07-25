@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsEmail, IsOptional, IsPhoneNumber, IsString, Length, IsNotEmpty } from 'class-validator';
+import { IsEmail, IsOptional, IsString, Length, IsNotEmpty, IsIn } from 'class-validator';
 
 export class VerifyOtpDto {
   @ApiProperty({
@@ -16,4 +16,14 @@ export class VerifyOtpDto {
   @Length(6, 6)
   @IsNotEmpty()
   otp: string;
+
+  @ApiPropertyOptional({
+    description: 'Purpose of OTP verification',
+    enum: ['registration', 'login'],
+    example: 'login',
+  })
+  @IsOptional()
+  @IsString()
+  @IsIn(['registration', 'login'])
+  purpose?: string;
 }

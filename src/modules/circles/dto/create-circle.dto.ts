@@ -3,10 +3,10 @@ import {
   IsNumber,
   IsInt,
   Min,
+  IsIn,
   IsDateString,
   IsNotEmpty,
   IsEnum,
-  IsUUID,
   IsOptional,
 } from 'class-validator';
 import { CycleFrequency } from '@prisma/client';
@@ -22,12 +22,12 @@ export class CreateCircleDto {
   @Min(10)
   contributionAmount: number;
 
-  @ApiProperty({ example: 10, description: 'Duration in months' })
+  @ApiProperty({ example: 10, description: 'Duration in months (must be 6, 10, or 12)' })
   @IsInt()
-  @Min(2)
+  @IsIn([6, 10, 12], { message: 'durationMonths must be 6, 10, or 12' })
   durationMonths: number;
 
-  @ApiProperty({ example: 10, description: 'Max member capacity' })
+  @ApiProperty({ example: 10, description: 'Max member capacity (must equal durationMonths)' })
   @IsInt()
   @Min(2)
   memberCapacity: number;
@@ -41,9 +41,4 @@ export class CreateCircleDto {
   @IsDateString()
   @IsNotEmpty()
   startDate: string;
-
-  @ApiProperty({ description: 'UUID of the fee policy to attach to this circle' })
-  @IsUUID()
-  @IsNotEmpty()
-  feePolicyId: string;
 }
