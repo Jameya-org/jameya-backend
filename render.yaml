@@ -1,0 +1,51 @@
+services:
+  - type: web
+    name: jameya-backend
+    runtime: node
+    plan: starter
+    buildCommand: npm install && npm run build
+    startCommand: npx prisma migrate deploy && npm run start:prod
+    healthCheckPath: /
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: DATABASE_URL
+        fromDatabase:
+          name: jameya-db
+          property: connectionString
+      - key: JWT_ACCESS_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+      - key: ADMIN_JWT_ACCESS_SECRET
+        generateValue: true
+      - key: ADMIN_JWT_REFRESH_SECRET
+        generateValue: true
+      - key: JWT_ACCESS_EXPIRATION
+        value: 15m
+      - key: JWT_REFRESH_EXPIRATION
+        value: 30d
+      - key: ADMIN_JWT_ACCESS_EXPIRATION
+        value: 15m
+      - key: ADMIN_JWT_REFRESH_EXPIRATION
+        value: 8h
+      - key: OTP_DRIVER
+        value: email
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        value: 587
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: SMTP_FROM
+        sync: false
+
+databases:
+  - name: jameya-db
+    databaseName: jameya_db
+    user: jameya_user
+    plan: starter
