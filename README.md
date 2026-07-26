@@ -8,7 +8,8 @@ RESTful Backend API for **Jameya (Rotating Savings & Credit Association)** built
 
 Interactive Swagger API Documentation is automatically served when the application is running.
 
-- **Swagger UI URL:** [http://localhost:3000/api-docs](http://localhost:3000/api-docs)
+- **Live / Render Swagger UI:** [https://jameya-backend.onrender.com/api-docs](https://jameya-backend.onrender.com/api-docs)
+- **Local Swagger UI:** [http://localhost:3000/api-docs](http://localhost:3000/api-docs)
 
 > 💡 **Frontend Team Note:**
 > All available API endpoints (Auth, Customer Management, Circle Management, Admin, etc.), request payloads, responses, and authentication requirements (JWT Bearer tokens) can be inspected and tested directly through the Swagger interface.
