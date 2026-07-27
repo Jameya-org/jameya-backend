@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsEmail, IsOptional, IsString, Length, IsNotEmpty, IsIn } from 'class-validator';
+import { IsEmail, IsOptional, IsString, Length, IsNotEmpty, IsEnum } from 'class-validator';
+import { OtpPurpose } from './otp-purpose.enum';
 
 export class VerifyOtpDto {
   @ApiProperty({
@@ -18,12 +19,11 @@ export class VerifyOtpDto {
   otp: string;
 
   @ApiPropertyOptional({
-    description: 'Purpose of OTP verification',
-    enum: ['registration', 'login'],
-    example: 'login',
+    description: 'Purpose of OTP verification. Should match the purpose returned by the request-otp endpoint.',
+    enum: OtpPurpose,
+    example: OtpPurpose.LOGIN,
   })
   @IsOptional()
-  @IsString()
-  @IsIn(['registration', 'login'])
-  purpose?: string;
+  @IsEnum(OtpPurpose)
+  purpose?: OtpPurpose;
 }
