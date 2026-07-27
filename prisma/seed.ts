@@ -110,10 +110,60 @@ async function main(): Promise<void> {
     console.log(
       `Seeded ACTIVE fee policy for ${policyData.durationMonths}m: ${created.version} (id: ${created.id})`,
     );
+
+    // Seed a sample UPCOMING circle for each policy if no upcoming circle exists for this duration
+    const existingCircle = await prisma.circle.findFirst({
+      where: { durationMonths: policyData.durationMonths, status: 'UPCOMING' },
+    });
+
+    if (!existingCircle) {
+      const monthlyContribution = 1000;
+      const totalAmount = monthlyContribution * policyData.durationMonths;
+      const startDate = new Date();
+      startDate.setMonth(startDate.getMonth() + 1);
+      const endDate = new Date(startDate);
+      endDate.setMonth(endDate.getMonth() + policyData.durationMonths);
+
+      const sampleCircle = await prisma.circle.create({
+        data: {
+          amount: totalAmount,
+          contributionAmount: monthlyContribution,
+          durationMonths: policyData.durationMonths,
+          cycleFrequency: 'MONTHLY',
+          memberCapacity: policyData.durationMonths,
+          currentMembersCount: 0,
+          startDate,
+          endDate,
+          status: 'UPCOMING',
+          feePolicyId: created.id,
+          feePolicySnapshot: policyData.positionFees,
+        },
+      });
+      console.log(
+        `Seeded UPCOMING ${policyData.durationMonths}m circle (${totalAmount} EGP total, ${monthlyContribution} EGP/mo) (id: ${sampleCircle.id})`,
+      );
+    }
   }
 
-  console.log(`\nSeeded role: ${SUPER_ADMIN_ROLE}`);
-  console.log(`Seeded admin: ${adminEmail}`);
+  // Seed sample test customer for Flutter team testing
+  const testCustomerMobile = '+201000000001';
+  const testCustomer = await prisma.customer.upsert({
+    where: { mobileNumber: testCustomerMobile },
+    update: {},
+    create: {
+      mobileNumber: testCustomerMobile,
+      email: 'testuser@jameya.local',
+      legalName: 'Flutter Test Customer',
+      status: 'ACTIVE',
+    },
+  });
+
+  console.log(`\n=================== SEED SUMMARY ===================`);
+  console.log(`✅ Seeded Role: ${SUPER_ADMIN_ROLE}`);
+  console.log(`✅ Seeded Admin Email: ${adminEmail}`);
+  console.log(`✅ Seeded Admin Password: ${adminPassword}`);
+  console.log(`✅ Seeded Test Customer Mobile: ${testCustomer.mobileNumber}`);
+  console.log(`====================================================`);
 }
 
 main()

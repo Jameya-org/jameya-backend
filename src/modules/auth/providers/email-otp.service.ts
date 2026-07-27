@@ -1,17 +1,33 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { MailerService } from '@nestjs-modules/mailer';
+import { ConfigService } from '@nestjs/config';
+import { Resend } from 'resend';
 import { IOtpProvider } from './otp-provider.interface';
 
 @Injectable()
 export class EmailOtpService implements IOtpProvider {
   private readonly logger = new Logger(EmailOtpService.name);
+  private readonly resend: Resend;
+  private readonly fromEmail: string;
 
-  constructor(private readonly mailerService: MailerService) { }
+  constructor(private readonly configService: ConfigService) {
+    const apiKey = this.configService.get<string>('RESEND_API_KEY');
+    if (!apiKey) {
+      this.logger.warn(
+        '⚠️ RESEND_API_KEY is not set. Resend email service will fail unless an API key is provided.',
+      );
+    }
+    this.resend = new Resend(apiKey || 're_placeholder');
+    this.fromEmail = this.configService.get<string>(
+      'RESEND_FROM',
+      'Jameya Support <onboarding@resend.dev>',
+    );
+  }
 
   async sendOtp(target: string, code: string): Promise<boolean> {
     try {
-      await this.mailerService.sendMail({
-        to: target,
+      const { data, error } = await this.resend.emails.send({
+        from: this.fromEmail,
+        to: [target],
         subject: 'Your Jameya Verification Code',
         html: `
           <div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">
@@ -25,10 +41,22 @@ export class EmailOtpService implements IOtpProvider {
         `,
       });
 
-      this.logger.log(`✅ Email OTP (${code}) sent successfully to ${target}`);
+      if (error) {
+        this.logger.error(
+          `❌ Failed to send Email OTP via Resend to ${target}: ${error.message}`,
+        );
+        return false;
+      }
+
+      this.logger.log(
+        `✅ Email OTP (${code}) sent successfully via Resend to ${target} (id: ${data?.id})`,
+      );
       return true;
-    } catch (error) {
-      this.logger.error(`❌ Failed to send Email OTP to ${target}: ${error.message}`, error.stack);
+    } catch (error: any) {
+      this.logger.error(
+        `❌ Exception sending Email OTP to ${target}: ${error.message}`,
+        error.stack,
+      );
       return false;
     }
   }

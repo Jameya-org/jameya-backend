@@ -4,7 +4,7 @@ services:
     runtime: node
     plan: starter
     buildCommand: npm install --include=dev && npm run build
-    startCommand: npx prisma migrate deploy && npm run start:prod
+    startCommand: npx prisma migrate deploy && npx prisma db seed && npm run start:prod
     healthCheckPath: /
     envVars:
       - key: NODE_ENV
@@ -33,16 +33,14 @@ services:
         value: 8h
       - key: OTP_DRIVER
         value: email
-      - key: SMTP_HOST
+      - key: RESEND_API_KEY
         sync: false
-      - key: SMTP_PORT
-        value: 587
-      - key: SMTP_USER
-        sync: false
-      - key: SMTP_PASS
-        sync: false
-      - key: SMTP_FROM
-        sync: false
+      - key: RESEND_FROM
+        value: "Jameya Support <onboarding@resend.dev>"
+      - key: SEED_ADMIN_EMAIL
+        value: "admin@jameya.local"
+      - key: SEED_ADMIN_PASSWORD
+        value: "ChangeMe123!"
 
 databases:
   - name: jameya-db
