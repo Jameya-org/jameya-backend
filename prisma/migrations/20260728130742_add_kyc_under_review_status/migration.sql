@@ -1,0 +1,2 @@
+-- AlterEnum
+ALTER TYPE "KycStatus" ADD VALUE 'UNDER_REVIEW';

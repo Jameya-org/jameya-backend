@@ -32,6 +32,11 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
       throw new UnauthorizedException('User account is inactive or blocked');
     }
 
-    return customer; // Attaches to req.user
+    // Return normalized shape — matches AuthenticatedRequest interface
+    return {
+      id: customer.id,
+      email: customer.email,
+      mobileNumber: customer.mobileNumber,
+    };
   }
 }

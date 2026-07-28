@@ -42,6 +42,18 @@ export class CustomersController {
     return this.customersService.uploadDocument(req.user.id, dto);
   }
 
+  @Post('kyc/submit')
+  @ApiOperation({
+    summary: 'Submit KYC for admin review',
+    description:
+      'Transitions KYC status to UNDER_REVIEW. Requires an identity doc ' +
+      '(NATIONAL_ID or PASSPORT) and a PROOF_OF_INCOME to have been uploaded first. ' +
+      'Can be called again after a REJECTED status to resubmit.',
+  })
+  async submitKycForReview(@Req() req: AuthenticatedRequest) {
+    return this.customersService.submitKycForReview(req.user.id);
+  }
+
   @Get('kyc-status')
   @ApiOperation({ summary: 'Get aggregated customer KYC status, documents, and eligibility' })
   async getKycStatus(@Req() req: AuthenticatedRequest) {

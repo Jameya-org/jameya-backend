@@ -20,6 +20,7 @@ enum CustomerStatus {
 enum KycStatus {
   NOT_STARTED
   PENDING
+  UNDER_REVIEW
   APPROVED
   REJECTED
 }

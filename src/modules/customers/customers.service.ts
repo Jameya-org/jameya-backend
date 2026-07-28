@@ -1,12 +1,17 @@
 import {
   Injectable,
   NotFoundException,
+  BadRequestException,
+  ConflictException,
 } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { CustomersRepository } from './customers.repository';
 import { CreateIdentityProfileDto } from './dto/create-identity-profile.dto';
 import { UploadDocumentDto } from './dto/upload-document.dto';
-import { KycStatus, Prisma } from '@prisma/client';
+import { KycStatus, DocumentType, Prisma } from '@prisma/client';
+
+// Document types that satisfy the identity requirement
+const IDENTITY_DOC_TYPES: DocumentType[] = [DocumentType.NATIONAL_ID, DocumentType.PASSPORT];
 
 @Injectable()
 export class CustomersService {
@@ -34,10 +39,14 @@ export class CustomersService {
         throw e;
       });
 
-      // Preserve existing kycStatus on re-submission — only set PENDING on first create.
-      // This prevents a profile update (e.g., fixing an address) from silently
-      // downgrading a previously APPROVED customer back to PENDING.
       const existingStatus = customer.identityProfile?.kycStatus;
+
+      // Only reset to PENDING if NOT_STARTED or PENDING — never downgrade
+      // UNDER_REVIEW, APPROVED, or REJECTED (those are admin-controlled states).
+      const shouldResetToPending =
+        !existingStatus ||
+        existingStatus === KycStatus.NOT_STARTED ||
+        existingStatus === KycStatus.PENDING;
 
       const profile = await tx.identityProfile.upsert({
         where: { customerId },
@@ -52,12 +61,7 @@ export class CustomersService {
           dateOfBirth: dob,
           nationalIdentifierToken: dto.nationalIdentifierToken,
           address: dto.address as unknown as Prisma.InputJsonValue,
-          // Only reset to PENDING if the profile was NOT_STARTED or already PENDING.
-          // APPROVED / REJECTED statuses are preserved and must be changed via
-          // a dedicated admin review action.
-          ...((!existingStatus || existingStatus === KycStatus.NOT_STARTED)
-            ? { kycStatus: KycStatus.PENDING }
-            : {}),
+          ...(shouldResetToPending ? { kycStatus: KycStatus.PENDING } : {}),
         },
       });
 
@@ -66,7 +70,6 @@ export class CustomersService {
   }
 
   async uploadDocument(customerId: string, dto: UploadDocumentDto) {
-    // Verify customer exists via repository (single source of truth)
     const customer = await this.repo.findById(customerId);
     if (!customer) {
       throw new NotFoundException('Customer not found');
@@ -81,8 +84,62 @@ export class CustomersService {
     });
   }
 
+  /**
+   * Transitions customer KYC from PENDING or REJECTED → UNDER_REVIEW.
+   *
+   * Required documents before submission:
+   *   - 1 identity doc: NATIONAL_ID or PASSPORT
+   *   - 1 income doc:   PROOF_OF_INCOME
+   *
+   * Optional (supplementary): UTILITY_BILL, CAR_LICENSE, SYNDICATE_ID
+   */
+  async submitKycForReview(customerId: string) {
+    const customer = await this.repo.getFullCustomerKycState(customerId);
+    if (!customer) throw new NotFoundException('Customer not found');
+
+    const kycStatus = customer.identityProfile?.kycStatus;
+
+    if (!kycStatus || kycStatus === KycStatus.NOT_STARTED) {
+      throw new BadRequestException(
+        'Please complete your identity profile before submitting for review.',
+      );
+    }
+
+    if (kycStatus === KycStatus.UNDER_REVIEW) {
+      throw new ConflictException('Your KYC submission is already under review.');
+    }
+
+    if (kycStatus === KycStatus.APPROVED) {
+      throw new ConflictException('Your KYC has already been approved.');
+    }
+
+    // Allowed transitions: PENDING (first time) or REJECTED (resubmission after fix)
+    const uploadedDocTypes = customer.documents.map((d) => d.docType);
+
+    const hasIdentityDoc = IDENTITY_DOC_TYPES.some((t) => uploadedDocTypes.includes(t));
+    if (!hasIdentityDoc) {
+      throw new BadRequestException(
+        'An identity document is required before submitting (National ID or Passport).',
+      );
+    }
+
+    const hasIncomeDoc = uploadedDocTypes.includes(DocumentType.PROOF_OF_INCOME);
+    if (!hasIncomeDoc) {
+      throw new BadRequestException(
+        'A proof of income document is required before submitting (PROOF_OF_INCOME).',
+      );
+    }
+
+    await this.repo.updateKycStatus(customerId, KycStatus.UNDER_REVIEW);
+
+    return {
+      message:
+        'Your documents have been submitted for review. We will notify you once the review is complete.',
+      kycStatus: KycStatus.UNDER_REVIEW,
+    };
+  }
+
   async getMyKycStatus(customerId: string) {
-    // Delegate to repository — single source of truth for this aggregated query
     const customer = await this.repo.getFullCustomerKycState(customerId);
 
     if (!customer) {

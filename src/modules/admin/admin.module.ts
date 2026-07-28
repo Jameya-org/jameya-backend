@@ -23,6 +23,7 @@ import { AdminCirclesController } from './circles/admin-circles.controller';
 import { CirclesModule } from '../circles/circles.module';
 
 import { AuditModule } from './audit/audit.module';
+import { KycModule } from './kyc/kyc.module';
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { AuditModule } from './audit/audit.module';
     JwtModule.register({}),
     CirclesModule,
     AuditModule,
+    KycModule,
   ],
   controllers: [
     AdminAuthController,

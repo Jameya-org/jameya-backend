@@ -39,6 +39,10 @@ export class AdminJwtStrategy extends PassportStrategy(Strategy, 'admin-jwt') {
       throw new UnauthorizedException('Admin account is inactive or does not exist');
     }
 
-    return admin; // Attaches to req.user
+    return {
+      id: admin.id,
+      email: admin.email,
+      roles: [admin.role.name], // RolesGuard reads req.user.roles as string[]
+    };
   }
 }

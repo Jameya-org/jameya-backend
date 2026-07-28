@@ -122,7 +122,14 @@ export class CustomersRepository {
 
   async findPendingDocuments(): Promise<Document[]> {
     return this.prisma.document.findMany({
-      where: { status: DocumentStatus.PENDING },
+      where: {
+        status: DocumentStatus.PENDING,
+        customer: {
+          identityProfile: {
+            kycStatus: KycStatus.UNDER_REVIEW,
+          },
+        },
+      },
       include: {
         customer: {
           select: {
