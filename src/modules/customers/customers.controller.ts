@@ -14,7 +14,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
 /** Shape of `req.user` populated by JwtAuthGuard / JwtStrategy */
 interface AuthenticatedRequest extends Request {
-  user: { id: string; mobileNumber: string };
+  user: { id: string; email: string; mobileNumber: string };
 }
 
 @ApiTags('Customer / Profile & Verification')
@@ -23,6 +23,12 @@ interface AuthenticatedRequest extends Request {
 @Controller('customers')
 export class CustomersController {
   constructor(private readonly customersService: CustomersService) {}
+
+  @Get('profile')
+  @ApiOperation({ summary: 'Get authenticated customer profile (name, email, phone, status)' })
+  async getProfile(@Req() req: AuthenticatedRequest) {
+    return this.customersService.getProfile(req.user.id);
+  }
 
   @Post('profile')
   @ApiOperation({ summary: 'Submit or update legal identity profile details' })

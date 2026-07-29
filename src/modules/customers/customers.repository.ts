@@ -94,21 +94,38 @@ export class CustomersRepository {
   // DOCUMENTS
   // ==========================================
 
-  async createDocument(data: {
+  async upsertDocument(data: {
     customerId: string;
     docType: DocumentType;
     encryptedObjectRef: string;
     issueDate?: Date | null;
     expiryDate?: Date | null;
   }): Promise<Document> {
-    return this.prisma.document.create({
-      data: {
+    return this.prisma.document.upsert({
+      where: {
+        customerId_docType: {
+          customerId: data.customerId,
+          docType: data.docType,
+        },
+      },
+      create: {
         customerId: data.customerId,
         docType: data.docType,
         encryptedObjectRef: data.encryptedObjectRef,
         issueDate: data.issueDate,
         expiryDate: data.expiryDate,
         status: DocumentStatus.PENDING,
+      },
+      update: {
+        encryptedObjectRef: data.encryptedObjectRef,
+        issueDate: data.issueDate,
+        expiryDate: data.expiryDate,
+        // Reset review state so the admin re-reviews the new file
+        status: DocumentStatus.PENDING,
+        reviewResult: null,
+        reviewerAdminId: null,
+        reviewedAt: null,
+        submittedAt: new Date(),
       },
     });
   }

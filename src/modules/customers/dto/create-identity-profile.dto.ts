@@ -1,10 +1,12 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { 
   IsString, 
   IsNotEmpty, 
   IsDateString, 
   IsObject, 
-  ValidateNested 
+  ValidateNested,
+  IsOptional,
+  IsMobilePhone,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -35,14 +37,19 @@ export class CreateIdentityProfileDto {
   @IsDateString()
   dateOfBirth: string;
 
-  @ApiProperty({ example: '29805151601234', description: 'National ID number or token' })
+  @ApiProperty({ example: '29805151601234', description: 'National ID card number (14 digits)' })
   @IsString()
   @IsNotEmpty()
-  nationalIdentifierToken: string;
+  nationalIdNumber: string;
 
   @ApiProperty({ type: AddressDto })
   @IsObject()
   @ValidateNested()
   @Type(() => AddressDto)
   address: AddressDto;
+
+  @ApiPropertyOptional({ example: '+201012345678', description: 'Customer mobile phone number' })
+  @IsOptional()
+  @IsMobilePhone()
+  mobileNumber?: string;
 }

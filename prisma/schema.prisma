@@ -142,7 +142,7 @@ enum FeePolicyStatus {
 model Customer {
   id                   String                 @id @default(uuid()) @db.Uuid
   status               CustomerStatus         @default(ACTIVE)
-  mobileNumber         String                 @unique @map("mobile_number")
+  mobileNumber         String?                @unique @map("mobile_number")
   email                String?                @map("email")
   pinHash              String?                @map("pin_hash") // Quick access PIN / Biometric unlock
   legalName            String?                @map("legal_name")
@@ -195,8 +195,10 @@ model Document {
   customer            Customer        @relation(fields: [customerId], references: [id])
   reviewerAdmin       AdminUser?      @relation(fields: [reviewerAdminId], references: [id])
 
+  @@unique([customerId, docType])
   @@map("documents")
 }
+
 
 model EligibilityDecision {
   id                 String            @id @default(uuid()) @db.Uuid

@@ -27,10 +27,13 @@ export class CustomersService {
     // (record not found) if the customer doesn't exist, eliminating the
     // TOCTOU race that a pre-transaction findUnique check would introduce.
     return this.prisma.$transaction(async (tx) => {
-      // Update customer legal name — throws if customer doesn't exist
+      // Update customer legal name (and phone if provided) — throws if customer doesn't exist
       const customer = await tx.customer.update({
         where: { id: customerId },
-        data: { legalName: dto.legalName },
+        data: {
+          legalName: dto.legalName,
+          ...(dto.mobileNumber ? { mobileNumber: dto.mobileNumber } : {}),
+        },
         include: { identityProfile: true },
       }).catch((e) => {
         if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2025') {
@@ -53,13 +56,13 @@ export class CustomersService {
         create: {
           customerId,
           dateOfBirth: dob,
-          nationalIdentifierToken: dto.nationalIdentifierToken,
+          nationalIdentifierToken: dto.nationalIdNumber,
           address: dto.address as unknown as Prisma.InputJsonValue,
           kycStatus: KycStatus.PENDING,
         },
         update: {
           dateOfBirth: dob,
-          nationalIdentifierToken: dto.nationalIdentifierToken,
+          nationalIdentifierToken: dto.nationalIdNumber,
           address: dto.address as unknown as Prisma.InputJsonValue,
           ...(shouldResetToPending ? { kycStatus: KycStatus.PENDING } : {}),
         },
@@ -75,7 +78,7 @@ export class CustomersService {
       throw new NotFoundException('Customer not found');
     }
 
-    return this.repo.createDocument({
+    return this.repo.upsertDocument({
       customerId,
       docType: dto.docType,
       encryptedObjectRef: dto.encryptedObjectRef,
@@ -152,6 +155,24 @@ export class CustomersService {
       identityProfile: customer.identityProfile,
       documents: customer.documents,
       latestEligibility: customer.eligibilityDecisions[0] ?? null,
+    };
+  }
+
+  async getProfile(customerId: string) {
+    const customer = await this.repo.findById(customerId);
+
+    if (!customer) {
+      throw new NotFoundException('Customer not found');
+    }
+
+    return {
+      id: customer.id,
+      legalName: customer.legalName,
+      email: customer.email,
+      mobileNumber: customer.mobileNumber,
+      status: customer.status,
+      locale: customer.locale,
+      createdAt: customer.createdAt,
     };
   }
 }

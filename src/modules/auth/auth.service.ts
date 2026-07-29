@@ -147,9 +147,7 @@ export class AuthService {
       try {
         customer = await this.prisma.customer.create({
           data: {
-            mobileNumber: isEmail
-              ? `email_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`
-              : target,
+            mobileNumber: isEmail ? null : target,
             email: isEmail ? target : null,
             status: 'ACTIVE',
           },
@@ -165,7 +163,7 @@ export class AuthService {
     }
 
     // 6. Generate Access & Refresh Token pair
-    return this.generateTokens(customer.id, customer.email || customer.mobileNumber);
+    return this.generateTokens(customer.id, customer.email ?? customer.mobileNumber ?? customer.id);
   }
 
   /**
