@@ -16,14 +16,40 @@ function hashPassword(password: string): string {
 }
 
 async function main(): Promise<void> {
-  const role = await prisma.role.upsert({
-    where: { name: SUPER_ADMIN_ROLE },
-    update: { permissions: ['*'] },
-    create: {
-      name: SUPER_ADMIN_ROLE,
+  const rolesToSeed = [
+    {
+      name: 'SUPER_ADMIN',
       permissions: ['*'],
     },
-  });
+    {
+      name: 'COMPLIANCE_OFFICER',
+      permissions: ['kyc:read', 'kyc:write', 'customers:read', 'audit:read', 'dashboard:read'],
+    },
+    {
+      name: 'FINANCE_MANAGER',
+      permissions: ['payments:read', 'payments:write', 'circles:read', 'circles:manage', 'audit:read', 'dashboard:read'],
+    },
+    {
+      name: 'SUPPORT_AGENT',
+      permissions: ['customers:read', 'circles:read', 'payments:read', 'kyc:read', 'dashboard:read'],
+    },
+  ];
+
+  let superAdminRole;
+  for (const roleDef of rolesToSeed) {
+    const seededRole = await prisma.role.upsert({
+      where: { name: roleDef.name },
+      update: { permissions: roleDef.permissions },
+      create: {
+        name: roleDef.name,
+        permissions: roleDef.permissions,
+      },
+    });
+    if (roleDef.name === 'SUPER_ADMIN') {
+      superAdminRole = seededRole;
+    }
+  }
+  const role = superAdminRole!;
 
   const adminEmail =
     process.env.SEED_ADMIN_EMAIL ?? 'admin@jameya.local';

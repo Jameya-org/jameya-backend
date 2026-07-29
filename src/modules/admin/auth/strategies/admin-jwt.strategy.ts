@@ -42,7 +42,10 @@ export class AdminJwtStrategy extends PassportStrategy(Strategy, 'admin-jwt') {
     return {
       id: admin.id,
       email: admin.email,
-      roles: [admin.role.name], // RolesGuard reads req.user.roles as string[]
+      role: {
+        name: admin.role.name,
+        permissions: admin.role.permissions, // RolesGuard reads user.role.permissions[]
+      },
     };
   }
 }

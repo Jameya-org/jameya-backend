@@ -18,13 +18,27 @@ import {
   ApiResponse,
   ApiBearerAuth,
   ApiQuery,
+  ApiBody,
 } from '@nestjs/swagger';
+import { IsNotEmpty, IsOptional, IsString } from 'class-validator';
 import { CirclesService } from '../../circles/circles.service';
 import { CreateCircleDto } from '../../circles/dto/create-circle.dto';
 import { CircleStatus } from '@prisma/client';
-
 import { AdminJwtGuard } from '../auth/guards/admin-jwt.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
+import { RequirePermissions } from '../auth/decorators/permissions.decorator';
+
+class CancelCircleDto {
+  @IsString()
+  @IsNotEmpty({ message: 'reason is required when cancelling a circle' })
+  reason: string;
+}
+
+class ActivateCircleDto {
+  @IsString()
+  @IsOptional()
+  reason?: string;
+}
 
 @ApiTags('Admin – Circles')
 @ApiBearerAuth('access-token')
@@ -35,65 +49,75 @@ export class AdminCirclesController {
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  @ApiOperation({ summary: 'Create a new circle (admin only, auto-looks up active fee policy)' })
-  @ApiResponse({ status: 201, description: 'Circle created successfully' })
-  @ApiResponse({ status: 400, description: 'Invalid business logic (e.g. amount mismatch, capacity mismatch)' })
+  @RequirePermissions('circles:create')
+  @ApiOperation({ summary: 'Create a new circle draft (auto-looks up active fee policy)' })
+  @ApiResponse({ status: 201, description: 'Circle created in DRAFT status' })
+  @ApiResponse({ status: 400, description: 'Invalid business logic (amount/capacity mismatch)' })
   @ApiResponse({ status: 422, description: 'No active fee policy found for duration' })
   createCircle(@Body() dto: CreateCircleDto, @Req() req: any) {
     return this.circlesService.createCircle(dto, req.user?.id);
   }
 
   @Get()
+  @RequirePermissions('circles:read')
   @ApiOperation({ summary: 'List all circles with optional status filter' })
   @ApiQuery({ name: 'status', enum: CircleStatus, required: false })
-  @ApiResponse({ status: 200, description: 'List of circles' })
   getAllCircles(@Query('status') status?: CircleStatus) {
     return this.circlesService.getAllCircles(status);
   }
 
   @Get(':id')
+  @RequirePermissions('circles:read')
   @ApiOperation({ summary: 'Get a single circle by ID (includes memberships)' })
-  @ApiResponse({ status: 200, description: 'Circle details' })
   @ApiResponse({ status: 404, description: 'Circle not found' })
   getCircleById(@Param('id', ParseUUIDPipe) id: string) {
     return this.circlesService.getCircleById(id);
   }
 
-  @Patch(':id/status')
-  @ApiOperation({ summary: 'Update circle status with state machine transition rules' })
-  @ApiQuery({ name: 'status', enum: CircleStatus, required: true })
-  @ApiResponse({ status: 200, description: 'Status updated' })
-  @ApiResponse({ status: 409, description: 'Invalid state machine transition' })
-  @ApiResponse({ status: 404, description: 'Circle not found' })
-  updateCircleStatus(
+  @Patch(':id')
+  @RequirePermissions('circles:configure')
+  @ApiOperation({ summary: 'Edit circle properties — only core property changes past DRAFT require a reason (BR-05)' })
+  @ApiResponse({ status: 409, description: 'Core property change past DRAFT without reason' })
+  updateCircleProperties(
     @Param('id', ParseUUIDPipe) id: string,
-    @Query('status') status: CircleStatus,
-    @Body('reason') reason?: string,
+    @Body() dto: Partial<CreateCircleDto> & { reason?: string },
     @Req() req?: any,
+  ) {
+    return this.circlesService.updateCircleProperties(id, dto, req?.user?.id, dto.reason);
+  }
+
+  @Patch(':id/activate')
+  @RequirePermissions('circles:activate')
+  @ApiOperation({ summary: 'Activate a DRAFT circle — moves it to UPCOMING and locks fee policy' })
+  @ApiBody({ type: ActivateCircleDto, required: false })
+  @ApiResponse({ status: 409, description: 'Invalid state transition' })
+  activateCircle(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: ActivateCircleDto,
+    @Req() req: any,
   ) {
     return this.circlesService.updateCircleStatus(
       id,
-      status,
-      req?.user?.id,
-      reason,
+      CircleStatus.UPCOMING,
+      req.user?.id,
+      body?.reason,
     );
   }
 
-  @Patch(':id')
-  @ApiOperation({ summary: 'Update circle properties (requires reason if status is past DRAFT - BR-05)' })
-  @ApiResponse({ status: 200, description: 'Circle updated' })
-  @ApiResponse({ status: 409, description: 'Attempted core property change past DRAFT without reason' })
-  updateCircleProperties(
+  @Patch(':id/cancel')
+  @RequirePermissions('circles:cancel')
+  @ApiOperation({ summary: 'Cancel a circle at any stage — reason required (SRS 8.1)' })
+  @ApiResponse({ status: 409, description: 'Invalid state transition' })
+  cancelCircle(
     @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: Partial<CreateCircleDto>,
-    @Body('reason') reason?: string,
-    @Req() req?: any,
+    @Body() body: CancelCircleDto,
+    @Req() req: any,
   ) {
-    return this.circlesService.updateCircleProperties(
+    return this.circlesService.updateCircleStatus(
       id,
-      dto,
-      req?.user?.id,
-      reason,
+      CircleStatus.CANCELLED,
+      req.user?.id,
+      body.reason,
     );
   }
 }

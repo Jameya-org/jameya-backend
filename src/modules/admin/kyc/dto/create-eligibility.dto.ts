@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { IsUUID, IsNumber, IsInt, IsEnum, IsNotEmpty, IsOptional, Min, Max, IsDateString, IsString } from 'class-validator';
+import { ApiPropertyOptional } from '@nestjs/swagger';
 import { EligibilityStatus } from '@prisma/client';
 
 export class CreateEligibilityDto {
@@ -32,4 +33,9 @@ export class CreateEligibilityDto {
   @ApiProperty({ example: '2027-12-31T23:59:59.000Z', description: 'Expiration date' })
   @IsDateString()
   expiresAt: string;
+
+  @ApiPropertyOptional({ example: 'Income verified via bank statement, KYC docs approved.' })
+  @IsString()
+  @IsNotEmpty()
+  reason: string;
 }

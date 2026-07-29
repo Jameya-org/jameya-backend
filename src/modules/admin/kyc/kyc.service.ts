@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { CustomersRepository } from 'src/modules/customers/customers.repository';
+import { AuditService } from '../audit/audit.service';
 import { ReviewDocumentDto } from './dto/review-document.dto';
 import { CreateEligibilityDto } from './dto/create-eligibility.dto';
 import { KycStatus, Prisma } from '@prisma/client';
@@ -10,6 +11,7 @@ export class KycService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly customersRepo: CustomersRepository,
+    private readonly auditService: AuditService,
   ) {}
 
   async getPendingDocuments() {
@@ -41,6 +43,16 @@ export class KycService {
       }
     }
 
+    await this.auditService.log({
+      actorAdminId: adminId,
+      action: 'kyc.document.reviewed',
+      entityType: 'Document',
+      entityId: documentId,
+      oldValue: { status: document.status },
+      newValue: { status: dto.status },
+      reason: dto.reason,
+    });
+
     return updatedDoc;
   }
 
@@ -48,7 +60,7 @@ export class KycService {
     const customer = await this.customersRepo.findById(dto.customerId);
     if (!customer) throw new NotFoundException('Customer not found');
 
-    return this.prisma.eligibilityDecision.create({
+    const decision = await this.prisma.eligibilityDecision.create({
       data: {
         customerId: dto.customerId,
         trustScore: dto.trustScore ?? 500, // Default neutral baseline for MVP
@@ -61,5 +73,20 @@ export class KycService {
         overrideAdminId: adminId,
       },
     });
+
+    await this.auditService.log({
+      actorAdminId: adminId,
+      action: 'kyc.eligibility.override',
+      entityType: 'EligibilityDecision',
+      entityId: decision.id,
+      newValue: {
+        customerId: dto.customerId,
+        status: dto.status,
+        participationLimit: dto.participationLimit,
+      },
+      reason: dto.reason,
+    });
+
+    return decision;
   }
 }

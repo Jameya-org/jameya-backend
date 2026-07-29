@@ -29,6 +29,9 @@ export class RolesGuard implements CanActivate {
 
     const userPermissions: string[] = user.role.permissions;
 
+    // SUPER_ADMIN wildcard — bypass all granular permission checks
+    if (userPermissions.includes('*')) return true;
+
     const hasPermission = requiredPermissions.every((perm) =>
       userPermissions.includes(perm),
     );

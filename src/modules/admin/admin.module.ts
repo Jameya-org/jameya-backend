@@ -2,26 +2,43 @@ import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 
-// Admin Users
-import { AdminUsersController } from './admin-users/admin-users.controller';
-import { AdminUsersService } from './admin-users/admin-users.service';
-
-// Audit & Dashboard
-import { AuditController } from './audit/audit.controller';
-import { AuditService } from './audit/audit.service';
-import { DashboardController } from './dashboard/dashboard.controller';
-import { RolesService } from './roles/roles.service';
-
 // Admin Auth
 import { AdminAuthController } from './auth/admin-auth.controller';
 import { AdminAuthService } from './auth/admin-auth.service';
 import { AdminJwtStrategy } from './auth/strategies/admin-jwt.strategy';
 import { AdminJwtRefreshStrategy } from './auth/strategies/admin-jwt-refresh.strategy';
 
+// Profile
+import { AdminProfileController } from './profile/admin-profile.controller';
+import { AdminProfileService } from './profile/admin-profile.service';
+
+// Dashboard
+import { DashboardController } from './dashboard/dashboard.controller';
+import { DashboardService } from './dashboard/dashboard.service';
+
+// Admin User Management
+import { AdminUsersController } from './admin-users/admin-users.controller';
+import { AdminUsersService } from './admin-users/admin-users.service';
+
+// Customer Management
+import { AdminCustomersController } from './customers/admin-customers.controller';
+import { AdminCustomersService } from './customers/admin-customers.service';
+
+// Payments
+import { AdminPaymentsController } from './payments/admin-payments.controller';
+import { AdminPaymentsService } from './payments/admin-payments.service';
+
+// Audit & Roles
+import { AuditController } from './audit/audit.controller';
+import { AuditService } from './audit/audit.service';
+import { RolesController } from './roles/roles.controller';
+import { RolesService } from './roles/roles.service';
+
 // Admin Circles
 import { AdminCirclesController } from './circles/admin-circles.controller';
 import { CirclesModule } from '../circles/circles.module';
 
+// KYC (has its own module with AuditModule imported inside)
 import { AuditModule } from './audit/audit.module';
 import { KycModule } from './kyc/kyc.module';
 
@@ -35,16 +52,25 @@ import { KycModule } from './kyc/kyc.module';
   ],
   controllers: [
     AdminAuthController,
-    AdminUsersController,
-    AuditController,
+    AdminProfileController,
     DashboardController,
+    AdminUsersController,
+    AdminCustomersController,
+    AdminPaymentsController,
+    AuditController,
+    RolesController,
     AdminCirclesController,
   ],
   providers: [
     AdminAuthService,
     AdminJwtStrategy,
     AdminJwtRefreshStrategy,
+    AdminProfileService,
+    DashboardService,
     AdminUsersService,
+    AdminCustomersService,
+    AdminPaymentsService,
+    AuditService,
     RolesService,
   ],
   exports: [AdminAuthService, AdminUsersService, RolesService, AuditModule],
