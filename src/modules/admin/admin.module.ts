@@ -41,8 +41,9 @@ import { AdminMembershipsService } from './memberships/admin-memberships.service
 import { CirclesModule } from '../circles/circles.module';
 
 // KYC (has its own module with AuditModule imported inside)
-import { AuditModule } from './audit/audit.module';
 import { KycModule } from './kyc/kyc.module';
+import { AuditModule } from './audit/audit.module';
+import { AdminInstallmentsController } from './installments/admin-installments.controller';
 
 @Module({
   imports: [
@@ -63,6 +64,7 @@ import { KycModule } from './kyc/kyc.module';
     RolesController,
     AdminCirclesController,
     AdminMembershipsController,
+    AdminInstallmentsController,
   ],
   providers: [
     AdminAuthService,

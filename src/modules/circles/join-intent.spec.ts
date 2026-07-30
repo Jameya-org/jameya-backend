@@ -5,6 +5,7 @@ import { MembershipsService } from './memberships.service';
 import { FeeCalculatorService } from './fee-calculator.service';
 import { ContractsService } from '../contracts/contracts.service';
 import { AuthService } from '../auth/auth.service';
+import { PaymentMethodsService } from '../payments/payment-methods.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CircleStatus, EligibilityStatus, DocumentType, MembershipStatus, Prisma } from '@prisma/client';
 
@@ -49,6 +50,7 @@ describe('CustomerCirclesService - Join Intent Pre-check', () => {
         { provide: FeeCalculatorService, useValue: feeCalculatorServiceMock },
         { provide: ContractsService, useValue: {} },
         { provide: AuthService, useValue: {} },
+        { provide: PaymentMethodsService, useValue: { verifyAndAddPaymentMethod: jest.fn() } },
       ],
     }).compile();
 

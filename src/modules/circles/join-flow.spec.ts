@@ -10,6 +10,7 @@ import { MembershipsService } from './memberships.service';
 import { FeeCalculatorService } from './fee-calculator.service';
 import { ContractsService } from '../contracts/contracts.service';
 import { AuthService } from '../auth/auth.service';
+import { PaymentMethodsService } from '../payments/payment-methods.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
   CircleStatus,
@@ -64,6 +65,9 @@ describe('CustomerCirclesService - Full Join & Contract Signing Flow', () => {
         findUnique: jest.fn(),
         findFirst: jest.fn(),
       },
+      paymentMethod: {
+        findFirst: jest.fn().mockResolvedValue({ id: 'pm-123', verificationStatus: 'VERIFIED' }),
+      },
       $transaction: jest.fn(async (cb) => cb(txMock)),
     };
 
@@ -94,6 +98,7 @@ describe('CustomerCirclesService - Full Join & Contract Signing Flow', () => {
         { provide: FeeCalculatorService, useValue: feeCalculatorServiceMock },
         { provide: ContractsService, useValue: contractsServiceMock },
         { provide: AuthService, useValue: authServiceMock },
+        { provide: PaymentMethodsService, useValue: { verifyAndAddPaymentMethod: jest.fn() } },
       ],
     }).compile();
 
@@ -101,7 +106,7 @@ describe('CustomerCirclesService - Full Join & Contract Signing Flow', () => {
   });
 
   describe('startJoin (Endpoint 1)', () => {
-    it('should throw 422 has_overdue_installments if user has late unpaid installments in another circle', async () => {
+    it('should throw 422 has_overdue_installment if user has late unpaid installments in another circle', async () => {
       // Eligible customer
       prismaMock.customer.findUnique.mockResolvedValue({
         id: mockCustomerId,
@@ -131,7 +136,7 @@ describe('CustomerCirclesService - Full Join & Contract Signing Flow', () => {
       } catch (err: any) {
         expect(err).toBeInstanceOf(UnprocessableEntityException);
         const res = err.getResponse();
-        expect(res.reason).toBe('has_overdue_installments');
+        expect(res.reason).toBe('has_overdue_installment');
       }
     });
 

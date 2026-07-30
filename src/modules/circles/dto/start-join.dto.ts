@@ -1,5 +1,5 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsInt, Min, IsUUID, IsNotEmpty } from 'class-validator';
+import { ApiPropertyOptional, ApiProperty } from '@nestjs/swagger';
+import { IsInt, Min, IsUUID, IsOptional, IsString } from 'class-validator';
 
 export class StartJoinDto {
   @ApiProperty({ description: 'Payout position number (1-based)', example: 1 })
@@ -7,8 +7,13 @@ export class StartJoinDto {
   @Min(1)
   payoutPosition: number;
 
-  @ApiProperty({ description: 'Saved payment method ID', example: 'd3b07384-d113-46e4-a587-542f4c6e9389' })
+  @ApiPropertyOptional({ description: 'Saved payment method ID', example: 'd3b07384-d113-46e4-a587-542f4c6e9389' })
+  @IsOptional()
   @IsUUID()
-  @IsNotEmpty()
-  paymentMethodId: string;
+  paymentMethodId?: string;
+
+  @ApiPropertyOptional({ description: 'Inline card token for new card setup', example: 'tok_visa_1234' })
+  @IsOptional()
+  @IsString()
+  cardToken?: string;
 }

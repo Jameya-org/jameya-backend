@@ -10,9 +10,10 @@ import { MembershipsService } from './memberships.service';
 import { AuditModule } from '../admin/audit/audit.module';
 import { ContractsModule } from '../contracts/contracts.module';
 import { AuthModule } from '../auth/auth.module';
+import { PaymentsModule } from '../payments/payments.module';
 
 @Module({
-  imports: [AuditModule, ContractsModule, AuthModule],
+  imports: [AuditModule, ContractsModule, AuthModule, PaymentsModule],
   controllers: [
     CirclesController,
     FeePoliciesController,

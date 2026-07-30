@@ -7,6 +7,8 @@ import { CirclesModule } from './modules/circles/circles.module';
 import { AdminModule } from './modules/admin/admin.module';
 import { CustomersModule } from './modules/customers/customers.module';
 import { StorageModule } from './modules/storage/storage.module';
+import { PaymentsModule } from './modules/payments/payments.module';
+import { InstallmentsModule } from './modules/installments/installments.module';
 import { JobsModule } from './jobs/jobs.module';
 import { validateEnv } from './config/env.validation';
 
@@ -20,6 +22,8 @@ import { validateEnv } from './config/env.validation';
     AdminModule,
     CustomersModule,
     StorageModule,
+    PaymentsModule,
+    InstallmentsModule,
     JobsModule,
   ],
 })

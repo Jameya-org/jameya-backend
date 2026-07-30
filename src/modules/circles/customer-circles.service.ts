@@ -11,6 +11,7 @@ import { MembershipsService } from './memberships.service';
 import { FeeCalculatorService } from './fee-calculator.service';
 import { ContractsService } from '../contracts/contracts.service';
 import { AuthService } from '../auth/auth.service';
+import { PaymentMethodsService } from '../payments/payment-methods.service';
 import { BrowseCirclesQueryDto } from './dto/browse-circles-query.dto';
 import { StartJoinDto } from './dto/start-join.dto';
 import { AcceptContractDto } from './dto/accept-contract.dto';
@@ -45,6 +46,7 @@ export class CustomerCirclesService {
     private readonly feeCalculatorService: FeeCalculatorService,
     private readonly contractsService: ContractsService,
     private readonly authService: AuthService,
+    private readonly paymentMethodsService: PaymentMethodsService,
   ) {}
 
   /**
@@ -373,7 +375,7 @@ export class CustomerCirclesService {
     const hasOverdue = await this.membershipsService.hasOverdueInstallments(customerId);
     if (hasOverdue) {
       throw new UnprocessableEntityException({
-        reason: 'has_overdue_installments',
+        reason: 'has_overdue_installment',
         message: 'You have unpaid overdue installments in another circle.',
       });
     }
@@ -545,6 +547,37 @@ export class CustomerCirclesService {
 
     const now = new Date();
 
+    // Resolve payment method (either inline cardToken verification OR existing verified paymentMethodId)
+    let selectedPaymentMethodId = dto.paymentMethodId;
+
+    if (dto.cardToken) {
+      const verifiedResult = await this.paymentMethodsService.verifyAndAddPaymentMethod(
+        customerId,
+        dto.cardToken,
+      );
+      selectedPaymentMethodId = verifiedResult.paymentMethodId;
+    } else if (selectedPaymentMethodId) {
+      const pm = await this.prisma.paymentMethod.findFirst({
+        where: {
+          id: selectedPaymentMethodId,
+          customerId,
+          removedAt: null,
+          verificationStatus: 'VERIFIED',
+        },
+      });
+      if (!pm) {
+        throw new UnprocessableEntityException({
+          reason: 'card_verification_failed',
+          message: 'Specified payment method is not verified or active.',
+        });
+      }
+    } else {
+      throw new UnprocessableEntityException({
+        reason: 'card_verification_failed',
+        message: 'A valid payment method or card token is required.',
+      });
+    }
+
     // Re-verify inside DB Transaction
     return await this.prisma.$transaction(async (tx) => {
       // 1. Check for late/unpaid installments in another circle
@@ -554,7 +587,7 @@ export class CustomerCirclesService {
       );
       if (hasOverdue) {
         throw new UnprocessableEntityException({
-          reason: 'has_overdue_installments',
+          reason: 'has_overdue_installment',
           message:
             'You have unpaid overdue installments in another circle. Settle them before joining.',
         });
@@ -674,6 +707,7 @@ export class CustomerCirclesService {
             circleId,
             customerId,
             payoutPosition: dto.payoutPosition,
+            defaultPaymentMethodId: selectedPaymentMethodId,
             status: MembershipStatus.PENDING_SIGNATURE,
             reservedUntil,
             usedEligibilityOverride,
