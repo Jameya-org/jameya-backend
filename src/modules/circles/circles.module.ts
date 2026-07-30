@@ -8,9 +8,11 @@ import { CustomerCirclesController } from './customer-circles.controller';
 import { CustomerCirclesService } from './customer-circles.service';
 import { MembershipsService } from './memberships.service';
 import { AuditModule } from '../admin/audit/audit.module';
+import { ContractsModule } from '../contracts/contracts.module';
+import { AuthModule } from '../auth/auth.module';
 
 @Module({
-  imports: [AuditModule],
+  imports: [AuditModule, ContractsModule, AuthModule],
   controllers: [
     CirclesController,
     FeePoliciesController,

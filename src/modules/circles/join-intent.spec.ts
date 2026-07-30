@@ -3,8 +3,10 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { CustomerCirclesService } from './customer-circles.service';
 import { MembershipsService } from './memberships.service';
 import { FeeCalculatorService } from './fee-calculator.service';
+import { ContractsService } from '../contracts/contracts.service';
+import { AuthService } from '../auth/auth.service';
 import { PrismaService } from '../../prisma/prisma.service';
-import { CircleStatus, EligibilityStatus, DocumentType, Prisma } from '@prisma/client';
+import { CircleStatus, EligibilityStatus, DocumentType, MembershipStatus, Prisma } from '@prisma/client';
 
 describe('CustomerCirclesService - Join Intent Pre-check', () => {
   let service: CustomerCirclesService;
@@ -32,6 +34,7 @@ describe('CustomerCirclesService - Join Intent Pre-check', () => {
 
     membershipsServiceMock = {
       getActiveObligationTotal: jest.fn(),
+      hasOverdueInstallments: jest.fn().mockResolvedValue(false),
     };
 
     feeCalculatorServiceMock = {
@@ -44,6 +47,8 @@ describe('CustomerCirclesService - Join Intent Pre-check', () => {
         { provide: PrismaService, useValue: prismaMock },
         { provide: MembershipsService, useValue: membershipsServiceMock },
         { provide: FeeCalculatorService, useValue: feeCalculatorServiceMock },
+        { provide: ContractsService, useValue: {} },
+        { provide: AuthService, useValue: {} },
       ],
     }).compile();
 
@@ -139,6 +144,7 @@ describe('CustomerCirclesService - Join Intent Pre-check', () => {
         id: 'mem-123',
         circleId: mockCircleId,
         customerId: mockCustomerId,
+        status: MembershipStatus.ACTIVE,
       });
 
       try {

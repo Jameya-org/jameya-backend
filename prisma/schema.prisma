@@ -75,6 +75,7 @@ enum CircleStatus {
 }
 
 enum MembershipStatus {
+  PENDING_SIGNATURE
   ACTIVE
   COMPLETED
   DEFAULTED
@@ -276,12 +277,14 @@ model Circle {
 }
 
 model Membership {
-  id                String           @id @default(uuid()) @db.Uuid
-  customerId        String           @map("customer_id") @db.Uuid
-  circleId          String           @map("circle_id") @db.Uuid
-  payoutPosition    Int              @map("payout_position")
-  status            MembershipStatus @default(ACTIVE)
-  joinedAt          DateTime         @default(now()) @map("joined_at") @db.Date
+  id                      String           @id @default(uuid()) @db.Uuid
+  customerId              String           @map("customer_id") @db.Uuid
+  circleId                String           @map("circle_id") @db.Uuid
+  payoutPosition          Int              @map("payout_position")
+  status                  MembershipStatus @default(ACTIVE)
+  reservedUntil           DateTime?        @map("reserved_until")
+  usedEligibilityOverride Boolean          @default(false) @map("used_eligibility_override")
+  joinedAt                DateTime         @default(now()) @map("joined_at") @db.Date
   obligationSummary Json?            @map("obligation_summary")
 
   customer          Customer         @relation(fields: [customerId], references: [id])

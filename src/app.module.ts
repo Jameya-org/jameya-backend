@@ -7,6 +7,7 @@ import { CirclesModule } from './modules/circles/circles.module';
 import { AdminModule } from './modules/admin/admin.module';
 import { CustomersModule } from './modules/customers/customers.module';
 import { StorageModule } from './modules/storage/storage.module';
+import { JobsModule } from './jobs/jobs.module';
 import { validateEnv } from './config/env.validation';
 
 @Module({
@@ -19,6 +20,7 @@ import { validateEnv } from './config/env.validation';
     AdminModule,
     CustomersModule,
     StorageModule,
+    JobsModule,
   ],
 })
 export class AppModule {}

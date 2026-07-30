@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { MembershipStatus, Prisma } from '@prisma/client';
+import { MembershipStatus, InstallmentStatus, Prisma } from '@prisma/client';
 
 @Injectable()
 export class MembershipsService {
@@ -8,14 +8,25 @@ export class MembershipsService {
 
   /**
    * Calculates the customer's current total active obligation across all circles.
-   * Defined as the sum of contributionAmount across all Membership rows with status = ACTIVE
-   * for the given customerId.
+   * Includes both ACTIVE memberships and PENDING_SIGNATURE memberships whose reservedUntil has not expired.
    */
-  async getActiveObligationTotal(customerId: string): Promise<Prisma.Decimal> {
-    const activeMemberships = await this.prisma.membership.findMany({
+  async getActiveObligationTotal(
+    customerId: string,
+    tx?: Prisma.TransactionClient,
+  ): Promise<Prisma.Decimal> {
+    const client = tx || this.prisma;
+    const now = new Date();
+
+    const activeMemberships = await client.membership.findMany({
       where: {
         customerId,
-        status: MembershipStatus.ACTIVE,
+        OR: [
+          { status: MembershipStatus.ACTIVE },
+          {
+            status: MembershipStatus.PENDING_SIGNATURE,
+            reservedUntil: { gt: now },
+          },
+        ],
       },
       select: {
         circle: {
@@ -32,5 +43,35 @@ export class MembershipsService {
     }
 
     return total;
+  }
+
+  /**
+   * Checks if customer has any late / unpaid installments across all circles.
+   * Returns true if there is an installment with status OVERDUE or (PENDING with dueDate < now).
+   */
+  async hasOverdueInstallments(
+    customerId: string,
+    tx?: Prisma.TransactionClient,
+  ): Promise<boolean> {
+    const client = tx || this.prisma;
+    const now = new Date();
+
+    const overdueCount = await client.installment.count({
+      where: {
+        membership: {
+          customerId,
+          status: { in: [MembershipStatus.ACTIVE, MembershipStatus.PENDING_SIGNATURE] },
+        },
+        OR: [
+          { status: InstallmentStatus.OVERDUE },
+          {
+            status: InstallmentStatus.PENDING,
+            dueDate: { lt: now },
+          },
+        ],
+      },
+    });
+
+    return overdueCount > 0;
   }
 }

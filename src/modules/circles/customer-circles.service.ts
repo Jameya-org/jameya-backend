@@ -2,11 +2,19 @@ import {
   Injectable,
   NotFoundException,
   UnprocessableEntityException,
+  ConflictException,
+  GoneException,
+  BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { MembershipsService } from './memberships.service';
 import { FeeCalculatorService } from './fee-calculator.service';
+import { ContractsService } from '../contracts/contracts.service';
+import { AuthService } from '../auth/auth.service';
 import { BrowseCirclesQueryDto } from './dto/browse-circles-query.dto';
+import { StartJoinDto } from './dto/start-join.dto';
+import { AcceptContractDto } from './dto/accept-contract.dto';
+import { VerifySignatureOtpDto } from './dto/verify-signature-otp.dto';
 import { mapToPublicMemberView } from './dto/public-member-view.dto';
 import {
   CircleStatus,
@@ -35,6 +43,8 @@ export class CustomerCirclesService {
     private readonly prisma: PrismaService,
     private readonly membershipsService: MembershipsService,
     private readonly feeCalculatorService: FeeCalculatorService,
+    private readonly contractsService: ContractsService,
+    private readonly authService: AuthService,
   ) {}
 
   /**
@@ -359,7 +369,16 @@ export class CustomerCirclesService {
       });
     }
 
-    // 2. Check circle existence & capacity
+    // 2. Check for overdue installments in another circle
+    const hasOverdue = await this.membershipsService.hasOverdueInstallments(customerId);
+    if (hasOverdue) {
+      throw new UnprocessableEntityException({
+        reason: 'has_overdue_installments',
+        message: 'You have unpaid overdue installments in another circle.',
+      });
+    }
+
+    // 3. Check circle existence & capacity
     const circle = await this.prisma.circle.findUnique({
       where: { id: circleId },
     });
@@ -377,21 +396,27 @@ export class CustomerCirclesService {
       });
     }
 
-    // 3. Check if customer is already a member of this circle
+    // 4. Check if customer is already a member of this circle
     const existingMembership = await this.prisma.membership.findFirst({
       where: {
         circleId,
         customerId,
+        status: { in: [MembershipStatus.ACTIVE, MembershipStatus.PENDING_SIGNATURE] },
       },
     });
 
     if (existingMembership) {
-      throw new UnprocessableEntityException({
-        reason: 'already_member',
-      });
+      if (
+        existingMembership.status === MembershipStatus.ACTIVE ||
+        (existingMembership.reservedUntil && new Date(existingMembership.reservedUntil) > new Date())
+      ) {
+        throw new UnprocessableEntityException({
+          reason: 'already_member',
+        });
+      }
     }
 
-    // 4. Check total active obligation against participation limit
+    // 5. Check total active obligation against participation limit
     const currentObligation =
       await this.membershipsService.getActiveObligationTotal(customerId);
 
@@ -426,11 +451,7 @@ export class CustomerCirclesService {
     const circle = await this.prisma.circle.findUnique({
       where: { id: circleId },
       include: {
-        memberships: {
-          select: {
-            payoutPosition: true,
-          },
-        },
+        memberships: true,
       },
     });
 
@@ -438,8 +459,19 @@ export class CustomerCirclesService {
       throw new NotFoundException(`Circle with ID ${circleId} not found`);
     }
 
+    const now = new Date();
+
+    // A position is occupied ONLY if status == ACTIVE or (status == PENDING_SIGNATURE && reservedUntil > now)
+    const activeOrReservedMemberships = circle.memberships.filter(
+      (m) =>
+        m.status === MembershipStatus.ACTIVE ||
+        (m.status === MembershipStatus.PENDING_SIGNATURE &&
+          m.reservedUntil &&
+          new Date(m.reservedUntil) > now),
+    );
+
     const occupiedPositions = new Set(
-      circle.memberships.map((m) => m.payoutPosition),
+      activeOrReservedMemberships.map((m) => m.payoutPosition),
     );
 
     const positions: Array<{
@@ -496,5 +528,369 @@ export class CustomerCirclesService {
       durationMonths: circle.durationMonths,
       positions,
     };
+  }
+
+  /**
+   * ENDPOINT 1: Start Join (Reservation)
+   * POST /customer/circles/:id/join
+   */
+  async startJoin(circleId: string, customerId: string, dto: StartJoinDto) {
+    const eligibilityCheck = await this.evaluateCustomerEligibility(customerId);
+    if (!eligibilityCheck.isEligible || !eligibilityCheck.latestDecision) {
+      throw new UnprocessableEntityException({
+        reason: 'eligibility_incomplete',
+        missingSteps: eligibilityCheck.missingSteps,
+      });
+    }
+
+    const now = new Date();
+
+    // Re-verify inside DB Transaction
+    return await this.prisma.$transaction(async (tx) => {
+      // 1. Check for late/unpaid installments in another circle
+      const hasOverdue = await this.membershipsService.hasOverdueInstallments(
+        customerId,
+        tx,
+      );
+      if (hasOverdue) {
+        throw new UnprocessableEntityException({
+          reason: 'has_overdue_installments',
+          message:
+            'You have unpaid overdue installments in another circle. Settle them before joining.',
+        });
+      }
+
+      // 2. Fetch circle & capacity
+      const circle = await tx.circle.findUnique({
+        where: { id: circleId },
+      });
+
+      if (!circle) {
+        throw new NotFoundException(`Circle with ID ${circleId} not found`);
+      }
+
+      if (
+        circle.status !== CircleStatus.UPCOMING ||
+        circle.currentMembersCount >= circle.memberCapacity
+      ) {
+        throw new UnprocessableEntityException({ reason: 'circle_full' });
+      }
+
+      if (dto.payoutPosition < 1 || dto.payoutPosition > circle.durationMonths) {
+        throw new UnprocessableEntityException({
+          reason: 'invalid_payout_position',
+          message: `Payout position must be between 1 and ${circle.durationMonths}`,
+        });
+      }
+
+      // 3. Check existing membership for this customer in this circle
+      const existingCustomerMembership = await tx.membership.findFirst({
+        where: {
+          circleId,
+          customerId,
+        },
+      });
+
+      if (existingCustomerMembership) {
+        if (
+          existingCustomerMembership.status === MembershipStatus.ACTIVE ||
+          (existingCustomerMembership.status === MembershipStatus.PENDING_SIGNATURE &&
+            existingCustomerMembership.reservedUntil &&
+            new Date(existingCustomerMembership.reservedUntil) > now)
+        ) {
+          throw new UnprocessableEntityException({ reason: 'already_member' });
+        } else if (
+          existingCustomerMembership.status === MembershipStatus.PENDING_SIGNATURE &&
+          existingCustomerMembership.reservedUntil &&
+          new Date(existingCustomerMembership.reservedUntil) <= now
+        ) {
+          // Delete expired reservation row so customer can restart cleanly
+          await tx.membership.delete({
+            where: { id: existingCustomerMembership.id },
+          });
+        }
+      }
+
+      // 4. Check total active obligation against participation limit
+      const currentObligation =
+        await this.membershipsService.getActiveObligationTotal(customerId, tx);
+      const participationLimit = new Prisma.Decimal(
+        eligibilityCheck.latestDecision.participationLimit,
+      );
+      const circleAmount = new Prisma.Decimal(circle.contributionAmount);
+
+      if (currentObligation.add(circleAmount).gt(participationLimit)) {
+        throw new UnprocessableEntityException({
+          reason: 'exceeds_participation_limit',
+          currentObligation: currentObligation.toFixed(2),
+          limit: participationLimit.toFixed(2),
+          circleAmount: circleAmount.toFixed(2),
+        });
+      }
+
+      // 5. Check if requested payoutPosition is currently held by someone else
+      const existingPositionMembership = await tx.membership.findUnique({
+        where: {
+          circleId_payoutPosition: {
+            circleId,
+            payoutPosition: dto.payoutPosition,
+          },
+        },
+      });
+
+      if (existingPositionMembership) {
+        if (
+          existingPositionMembership.status === MembershipStatus.ACTIVE ||
+          (existingPositionMembership.status === MembershipStatus.PENDING_SIGNATURE &&
+            existingPositionMembership.reservedUntil &&
+            new Date(existingPositionMembership.reservedUntil) > now)
+        ) {
+          throw new ConflictException({
+            statusCode: 409,
+            message: 'position_taken',
+          });
+        } else if (
+          existingPositionMembership.status === MembershipStatus.PENDING_SIGNATURE &&
+          existingPositionMembership.reservedUntil &&
+          new Date(existingPositionMembership.reservedUntil) <= now
+        ) {
+          // Clean up expired position reservation
+          await tx.membership.delete({
+            where: { id: existingPositionMembership.id },
+          });
+        }
+      }
+
+      // 6. Check eligibility override flag
+      const usedEligibilityOverride =
+        eligibilityCheck.latestDecision.overrideAdminId != null;
+
+      // 7. Create Membership with 15-minute reservation
+      const reservedUntil = new Date(now.getTime() + 15 * 60 * 1000);
+      let membership: any;
+      try {
+        membership = await tx.membership.create({
+          data: {
+            circleId,
+            customerId,
+            payoutPosition: dto.payoutPosition,
+            status: MembershipStatus.PENDING_SIGNATURE,
+            reservedUntil,
+            usedEligibilityOverride,
+          },
+        });
+      } catch (err: any) {
+        if (err.code === 'P2002') {
+          throw new ConflictException({
+            statusCode: 409,
+            message: 'position_taken',
+          });
+        }
+        throw err;
+      }
+
+      // 8. Generate Draft Contract Reference
+      const contractDraftId = await this.contractsService.generateDraft(
+        membership.id,
+      );
+
+      // 9. Calculate fee preview
+      const feeCalc = this.feeCalculatorService.calculateNetPayout(
+        {
+          amount: circle.amount,
+          feePolicySnapshot: circle.feePolicySnapshot,
+          durationMonths: circle.durationMonths,
+        },
+        dto.payoutPosition,
+      );
+
+      return {
+        membershipId: membership.id,
+        reservedUntil: membership.reservedUntil,
+        contractDraftId,
+        payoutPosition: membership.payoutPosition,
+        calculatedPayout: {
+          gross: feeCalc.gross.toFixed(2),
+          feeAmount: feeCalc.feeAmount.toFixed(2),
+          net: feeCalc.net.toFixed(2),
+          feePercentage: feeCalc.feePercentage.toFixed(2),
+        },
+      };
+    });
+  }
+
+  /**
+   * ENDPOINT 3: Accept Terms & Request Signature OTP
+   * POST /customer/join/:membershipId/contract/accept
+   */
+  async acceptContract(
+    membershipId: string,
+    customerId: string,
+    dto: AcceptContractDto,
+  ) {
+    if (!dto.agreedToTerms || !dto.agreedToInstallmentSchedule || !dto.agreedToLateFees) {
+      throw new BadRequestException(
+        'Explicit consent is required for all terms, installment schedule, and late fees.',
+      );
+    }
+
+    const membership = await this.prisma.membership.findUnique({
+      where: { id: membershipId },
+      include: { customer: true },
+    });
+
+    if (!membership || membership.customerId !== customerId) {
+      throw new NotFoundException('Membership reservation not found');
+    }
+
+    if (membership.status !== MembershipStatus.PENDING_SIGNATURE) {
+      throw new UnprocessableEntityException(
+        'Membership is not in PENDING_SIGNATURE state',
+      );
+    }
+
+    const now = new Date();
+    if (!membership.reservedUntil || new Date(membership.reservedUntil) <= now) {
+      throw new GoneException({
+        statusCode: 410,
+        message: 'reservation_expired',
+      });
+    }
+
+    const target = membership.customer.mobileNumber || membership.customer.email;
+    if (!target) {
+      throw new UnprocessableEntityException('Customer mobile number or email is missing');
+    }
+
+    await this.authService.requestOtp(target, 'contract_signature');
+
+    return {
+      statusCode: 200,
+      message: 'Signature verification code sent successfully',
+      membershipId,
+      expiresAt: membership.reservedUntil,
+    };
+  }
+
+  /**
+   * ENDPOINT 4: Verify Signature OTP & Finalize Membership
+   * POST /customer/join/:membershipId/contract/verify-otp
+   */
+  async verifyContractOtpAndFinalize(
+    membershipId: string,
+    customerId: string,
+    dto: VerifySignatureOtpDto,
+    requestContext?: { ipAddress?: string; deviceInfo?: string },
+  ) {
+    const membership = await this.prisma.membership.findUnique({
+      where: { id: membershipId },
+      include: { customer: true, circle: true },
+    });
+
+    if (!membership || membership.customerId !== customerId) {
+      throw new NotFoundException('Membership reservation not found');
+    }
+
+    if (membership.status !== MembershipStatus.PENDING_SIGNATURE) {
+      throw new UnprocessableEntityException(
+        'Membership is not in PENDING_SIGNATURE state',
+      );
+    }
+
+    const now = new Date();
+    if (!membership.reservedUntil || new Date(membership.reservedUntil) <= now) {
+      throw new GoneException({
+        statusCode: 410,
+        message: 'reservation_expired',
+      });
+    }
+
+    const target = membership.customer.mobileNumber || membership.customer.email;
+    if (!target) {
+      throw new UnprocessableEntityException('Customer mobile number or email is missing');
+    }
+
+    // Verify OTP using existing OTP service method
+    const otpResult = await this.authService.verifyOtp(
+      target,
+      dto.code,
+      'contract_signature',
+    );
+
+    // Single DB Transaction for activation
+    return await this.prisma.$transaction(async (tx) => {
+      // 1. Finalize contract (idempotent)
+      const contract = await this.contractsService.finalize(
+        membershipId,
+        otpResult,
+        tx,
+        requestContext,
+      );
+
+      // 2. Update membership: status = ACTIVE, reservedUntil = null
+      const updatedMembership = await tx.membership.update({
+        where: { id: membershipId },
+        data: {
+          status: MembershipStatus.ACTIVE,
+          reservedUntil: null,
+        },
+      });
+
+      // 3. Upfront installment generation
+      const installments: any[] = [];
+      const startDate = new Date(membership.circle.startDate);
+
+      for (let cycle = 1; cycle <= membership.circle.durationMonths; cycle++) {
+        const dueDate = new Date(startDate);
+        dueDate.setMonth(dueDate.getMonth() + (cycle - 1));
+
+        const installment = await tx.installment.create({
+          data: {
+            membershipId,
+            cycleNumber: cycle,
+            dueDate,
+            amount: membership.circle.contributionAmount,
+            status: InstallmentStatus.PENDING,
+          },
+        });
+        installments.push(installment);
+      }
+
+      // 4. Audit Event
+      await tx.auditEvent.create({
+        data: {
+          entityType: 'membership',
+          entityId: membershipId,
+          action: 'joined',
+          reason: null,
+        },
+      });
+
+      // 5. Increment Circle currentMembersCount
+      await tx.circle.update({
+        where: { id: membership.circleId },
+        data: {
+          currentMembersCount: { increment: 1 },
+        },
+      });
+
+      return {
+        status: 'active',
+        membershipId: updatedMembership.id,
+        contract: {
+          id: contract.id,
+          docHash: contract.docHash,
+          renderedFileRef: contract.renderedFileRef,
+          signedAt: contract.signedAt,
+        },
+        installments: installments.map((i) => ({
+          id: i.id,
+          cycleNumber: i.cycleNumber,
+          dueDate: i.dueDate,
+          amount: i.amount,
+          status: i.status,
+        })),
+      };
+    });
   }
 }

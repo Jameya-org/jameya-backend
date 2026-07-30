@@ -4,6 +4,7 @@ import {
   Post,
   Param,
   Query,
+  Body,
   Req,
   Res,
   UseGuards,
@@ -16,6 +17,9 @@ import type { Response } from 'express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CustomerCirclesService } from './customer-circles.service';
 import { BrowseCirclesQueryDto } from './dto/browse-circles-query.dto';
+import { StartJoinDto } from './dto/start-join.dto';
+import { AcceptContractDto } from './dto/accept-contract.dto';
+import { VerifySignatureOtpDto } from './dto/verify-signature-otp.dto';
 
 interface AuthenticatedRequest extends Request {
   user: { id: string; email: string; mobileNumber: string };
@@ -80,5 +84,55 @@ export class CustomerCirclesController {
   ) {
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
     return this.customerCirclesService.getPositionAvailability(id);
+  }
+
+  @Post('circles/:id/join')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: 'ENDPOINT 1: Start join reservation (15-min TTL, draft contract generated)' })
+  @ApiResponse({ status: 201, description: 'Position reserved successfully, draft contract reference returned' })
+  @ApiResponse({ status: 409, description: 'Position taken' })
+  @ApiResponse({ status: 422, description: 'Eligibility, capacity, or overdue installment check failed' })
+  async startJoin(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: StartJoinDto,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return this.customerCirclesService.startJoin(id, req.user.id, dto);
+  }
+
+  @Post('join/:membershipId/contract/accept')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'ENDPOINT 3: Accept contract terms & request signature OTP' })
+  @ApiResponse({ status: 200, description: 'Explicit consent accepted and signature OTP sent' })
+  @ApiResponse({ status: 410, description: 'Reservation expired' })
+  async acceptContract(
+    @Param('membershipId', ParseUUIDPipe) membershipId: string,
+    @Body() dto: AcceptContractDto,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return this.customerCirclesService.acceptContract(membershipId, req.user.id, dto);
+  }
+
+  @Post('join/:membershipId/contract/verify-otp')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'ENDPOINT 4: Verify signature OTP & finalize membership' })
+  @ApiResponse({ status: 200, description: 'OTP verified, contract finalized, membership activated, installments generated' })
+  @ApiResponse({ status: 400, description: 'Invalid or expired OTP' })
+  @ApiResponse({ status: 410, description: 'Reservation expired' })
+  async verifyContractOtp(
+    @Param('membershipId', ParseUUIDPipe) membershipId: string,
+    @Body() dto: VerifySignatureOtpDto,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    const requestContext = {
+      ipAddress: (req.headers['x-forwarded-for'] as string) || (req as any).ip || '127.0.0.1',
+      deviceInfo: (req.headers['user-agent'] as string) || 'unknown',
+    };
+    return this.customerCirclesService.verifyContractOtpAndFinalize(
+      membershipId,
+      req.user.id,
+      dto,
+      requestContext,
+    );
   }
 }

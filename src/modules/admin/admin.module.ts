@@ -34,8 +34,10 @@ import { AuditService } from './audit/audit.service';
 import { RolesController } from './roles/roles.controller';
 import { RolesService } from './roles/roles.service';
 
-// Admin Circles
+// Admin Circles & Memberships
 import { AdminCirclesController } from './circles/admin-circles.controller';
+import { AdminMembershipsController } from './memberships/admin-memberships.controller';
+import { AdminMembershipsService } from './memberships/admin-memberships.service';
 import { CirclesModule } from '../circles/circles.module';
 
 // KYC (has its own module with AuditModule imported inside)
@@ -60,6 +62,7 @@ import { KycModule } from './kyc/kyc.module';
     AuditController,
     RolesController,
     AdminCirclesController,
+    AdminMembershipsController,
   ],
   providers: [
     AdminAuthService,
@@ -72,7 +75,14 @@ import { KycModule } from './kyc/kyc.module';
     AdminPaymentsService,
     AuditService,
     RolesService,
+    AdminMembershipsService,
   ],
-  exports: [AdminAuthService, AdminUsersService, RolesService, AuditModule],
+  exports: [
+    AdminAuthService,
+    AdminUsersService,
+    RolesService,
+    AuditModule,
+    AdminMembershipsService,
+  ],
 })
 export class AdminModule {}
