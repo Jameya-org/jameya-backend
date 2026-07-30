@@ -2,31 +2,34 @@ name: Simple CI
 
 on:
   push:
-    branches: [ "main" ]
+    branches:
+      - main
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-      # 1. extract code
+      # 1. Checkout the repository
       - name: Checkout code
         uses: actions/checkout@v6
 
-      # 2. install node
+      # 2. Setup Node.js
       - name: Setup Node
         uses: actions/setup-node@v6
         with:
           node-version: '20'
 
-      # 3. install dependencies
+      # 3. Install dependencies
       - name: Install dependencies
         run: npm install
 
-      # 4. اbuild
+      # 4. Build the project
       - name: Build
+        env:
+          DATABASE_URL: "postgresql://user:password@localhost:5432/testdb"
         run: npm run build --if-present
 
-      # 5. test
+      # 5. Simple test
       - name: Run test
-        run: echo "CI is working"
+        run: echo "The CI is working"
