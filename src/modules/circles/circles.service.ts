@@ -5,9 +5,9 @@ import {
   UnprocessableEntityException,
   ConflictException,
 } from '@nestjs/common';
-import { PrismaService } from 'src/prisma/prisma.service';
+import { PrismaService } from '../../prisma/prisma.service';
 import { CreateCircleDto } from './dto/create-circle.dto';
-import { CircleStatus, FeePolicyStatus, Prisma } from '@prisma/client';
+import { CircleStatus, CycleFrequency, FeePolicyStatus, Prisma } from '@prisma/client';
 import { AuditService } from '../admin/audit/audit.service';
 
 const ALLOWED_DURATIONS = [6, 10, 12];
@@ -39,18 +39,23 @@ export class CirclesService {
       );
     }
 
+    // Auto-assign memberCapacity from durationMonths if omitted
+    const memberCapacity = dto.memberCapacity ?? dto.durationMonths;
+    // Auto-assign cycleFrequency to MONTHLY if omitted
+    const cycleFrequency = dto.cycleFrequency ?? CycleFrequency.MONTHLY;
+
     // 2. Validate memberCapacity === durationMonths for standard monthly circles
-    if (dto.memberCapacity !== dto.durationMonths) {
+    if (memberCapacity !== dto.durationMonths) {
       throw new BadRequestException(
-        `memberCapacity (${dto.memberCapacity}) must equal durationMonths (${dto.durationMonths}) for standard monthly circles.`,
+        `memberCapacity (${memberCapacity}) must equal durationMonths (${dto.durationMonths}) for standard monthly circles.`,
       );
     }
 
     // 3. Business logic: total amount must equal contributionAmount × memberCapacity
-    const expectedTotal = dto.contributionAmount * dto.memberCapacity;
+    const expectedTotal = dto.contributionAmount * memberCapacity;
     if (Number(dto.amount) !== expectedTotal) {
       throw new BadRequestException(
-        `Total amount (${dto.amount}) must equal contribution (${dto.contributionAmount}) × capacity (${dto.memberCapacity}) = ${expectedTotal}`,
+        `Total amount (${dto.amount}) must equal contribution (${dto.contributionAmount}) × capacity (${memberCapacity}) = ${expectedTotal}`,
       );
     }
 
@@ -79,8 +84,8 @@ export class CirclesService {
         amount: dto.amount,
         contributionAmount: dto.contributionAmount,
         durationMonths: dto.durationMonths,
-        memberCapacity: dto.memberCapacity,
-        cycleFrequency: dto.cycleFrequency ?? 'MONTHLY',
+        memberCapacity,
+        cycleFrequency,
         startDate: start,
         endDate: end,
         status: CircleStatus.DRAFT,
@@ -222,8 +227,12 @@ export class CirclesService {
     if (updateData.amount !== undefined) dataToUpdate.amount = updateData.amount;
     if (updateData.contributionAmount !== undefined)
       dataToUpdate.contributionAmount = updateData.contributionAmount;
-    if (updateData.durationMonths !== undefined)
+    if (updateData.durationMonths !== undefined) {
       dataToUpdate.durationMonths = updateData.durationMonths;
+      if (updateData.memberCapacity === undefined) {
+        dataToUpdate.memberCapacity = updateData.durationMonths;
+      }
+    }
     if (updateData.memberCapacity !== undefined)
       dataToUpdate.memberCapacity = updateData.memberCapacity;
     if (updateData.startDate !== undefined) {

@@ -27,12 +27,13 @@ export class CreateCircleDto {
   @IsIn([6, 10, 12], { message: 'durationMonths must be 6, 10, or 12' })
   durationMonths: number;
 
-  @ApiProperty({ example: 10, description: 'Max member capacity (must equal durationMonths)' })
+  @ApiPropertyOptional({ example: 10, description: 'Max member capacity (defaults to durationMonths if omitted)' })
   @IsInt()
   @Min(2)
-  memberCapacity: number;
+  @IsOptional()
+  memberCapacity?: number;
 
-  @ApiPropertyOptional({ enum: CycleFrequency, default: CycleFrequency.MONTHLY })
+  @ApiPropertyOptional({ enum: CycleFrequency, default: CycleFrequency.MONTHLY, description: 'Cycle frequency (defaults to MONTHLY)' })
   @IsEnum(CycleFrequency)
   @IsOptional()
   cycleFrequency?: CycleFrequency;
