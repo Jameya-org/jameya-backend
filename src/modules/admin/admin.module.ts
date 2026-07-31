@@ -45,6 +45,8 @@ import { KycModule } from './kyc/kyc.module';
 import { AuditModule } from './audit/audit.module';
 import { AdminInstallmentsController } from './installments/admin-installments.controller';
 
+import { NotificationsModule } from '../notifications/notifications.module';
+
 @Module({
   imports: [
     PassportModule,
@@ -52,6 +54,7 @@ import { AdminInstallmentsController } from './installments/admin-installments.c
     CirclesModule,
     AuditModule,
     KycModule,
+    NotificationsModule,
   ],
   controllers: [
     AdminAuthController,

@@ -102,7 +102,7 @@ export class CirclesService {
       newValue: circle as unknown as Record<string, any>,
     });
 
-    return circle;
+    return this.getCircleById(circle.id);
   }
 
   async getAllCircles(status?: CircleStatus) {

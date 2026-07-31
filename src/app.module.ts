@@ -10,6 +10,7 @@ import { StorageModule } from './modules/storage/storage.module';
 import { PaymentsModule } from './modules/payments/payments.module';
 import { InstallmentsModule } from './modules/installments/installments.module';
 import { JobsModule } from './jobs/jobs.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
 import { validateEnv } from './config/env.validation';
 
 @Module({
@@ -25,6 +26,7 @@ import { validateEnv } from './config/env.validation';
     PaymentsModule,
     InstallmentsModule,
     JobsModule,
+    NotificationsModule,
   ],
 })
 export class AppModule {}

@@ -20,6 +20,8 @@ import {
   Prisma,
 } from '@prisma/client';
 
+import { NotificationService } from '../notifications/notifications.service';
+
 describe('CustomerCirclesService - Full Join & Contract Signing Flow', () => {
   let service: CustomerCirclesService;
   let prismaMock: any;
@@ -99,6 +101,7 @@ describe('CustomerCirclesService - Full Join & Contract Signing Flow', () => {
         { provide: ContractsService, useValue: contractsServiceMock },
         { provide: AuthService, useValue: authServiceMock },
         { provide: PaymentMethodsService, useValue: { verifyAndAddPaymentMethod: jest.fn() } },
+        { provide: NotificationService, useValue: { notify: jest.fn() } },
       ],
     }).compile();
 

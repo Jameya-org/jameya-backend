@@ -38,6 +38,9 @@ export interface EligibilityCheckResult {
   latestDecision?: any;
 }
 
+import { NotificationService } from '../notifications/notifications.service';
+import { NotificationType } from '@prisma/client';
+
 @Injectable()
 export class CustomerCirclesService {
   constructor(
@@ -47,6 +50,7 @@ export class CustomerCirclesService {
     private readonly contractsService: ContractsService,
     private readonly authService: AuthService,
     private readonly paymentMethodsService: PaymentMethodsService,
+    private readonly notificationService: NotificationService,
   ) {}
 
   /**
@@ -908,7 +912,7 @@ export class CustomerCirclesService {
         },
       });
 
-      return {
+      const result = {
         status: 'active',
         membershipId: updatedMembership.id,
         contract: {
@@ -925,6 +929,23 @@ export class CustomerCirclesService {
           status: i.status,
         })),
       };
+
+      // Trigger notifications
+      await this.notificationService.notify(customerId, NotificationType.JOIN_CONFIRMED, {
+        circleId: membership.circleId,
+        membershipId,
+        relatedEntityType: 'Membership',
+        relatedEntityId: membershipId,
+      });
+
+      await this.notificationService.notify(customerId, NotificationType.CONTRACT_AVAILABLE, {
+        contractId: contract.id,
+        membershipId,
+        relatedEntityType: 'Contract',
+        relatedEntityId: contract.id,
+      });
+
+      return result;
     });
   }
 }

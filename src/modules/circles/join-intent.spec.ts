@@ -9,6 +9,8 @@ import { PaymentMethodsService } from '../payments/payment-methods.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CircleStatus, EligibilityStatus, DocumentType, MembershipStatus, Prisma } from '@prisma/client';
 
+import { NotificationService } from '../notifications/notifications.service';
+
 describe('CustomerCirclesService - Join Intent Pre-check', () => {
   let service: CustomerCirclesService;
   let prismaMock: any;
@@ -51,6 +53,7 @@ describe('CustomerCirclesService - Join Intent Pre-check', () => {
         { provide: ContractsService, useValue: {} },
         { provide: AuthService, useValue: {} },
         { provide: PaymentMethodsService, useValue: { verifyAndAddPaymentMethod: jest.fn() } },
+        { provide: NotificationService, useValue: { notify: jest.fn() } },
       ],
     }).compile();
 

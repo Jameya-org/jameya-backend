@@ -1,13 +1,17 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
-import { MembershipStatus } from '@prisma/client';
+import { NotificationService } from '../modules/notifications/notifications.service';
+import { MembershipStatus, NotificationType } from '@prisma/client';
 
 @Injectable()
 export class ReservationExpiryJob {
   private readonly logger = new Logger(ReservationExpiryJob.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notificationService: NotificationService,
+  ) {}
 
   @Cron(CronExpression.EVERY_MINUTE)
   async handleExpiredReservations(): Promise<void> {
@@ -51,16 +55,19 @@ export class ReservationExpiryJob {
               reason: 'auto-expired, position released',
             },
           });
-
-          // 3. Notify customer via InAppNotification
-          await tx.inAppNotification.create({
-            data: {
-              customerId: membership.customerId,
-              title: 'Reservation Expired',
-              body: `Your position reservation for payout position #${membership.payoutPosition} has expired. You may restart the join flow to claim an available position.`,
-            },
-          });
         });
+
+        // 3. Notify customer via NotificationService
+        await this.notificationService.notify(
+          membership.customerId,
+          NotificationType.RESERVATION_EXPIRED,
+          {
+            position: membership.payoutPosition,
+            circleId: membership.circleId,
+            relatedEntityType: 'Membership',
+            relatedEntityId: membership.id,
+          },
+        );
 
         this.logger.log(
           `Successfully expired reservation ${membership.id} (Position #${membership.payoutPosition})`,

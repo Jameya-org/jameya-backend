@@ -1,10 +1,11 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { PrismaService } from 'src/prisma/prisma.service';
-import { CustomersRepository } from 'src/modules/customers/customers.repository';
+import { PrismaService } from '../../../prisma/prisma.service';
+import { CustomersRepository } from '../../customers/customers.repository';
 import { AuditService } from '../audit/audit.service';
+import { NotificationService } from '../../notifications/notifications.service';
 import { ReviewDocumentDto } from './dto/review-document.dto';
 import { CreateEligibilityDto } from './dto/create-eligibility.dto';
-import { KycStatus, Prisma } from '@prisma/client';
+import { KycStatus, NotificationType, Prisma } from '@prisma/client';
 
 @Injectable()
 export class KycService {
@@ -12,6 +13,7 @@ export class KycService {
     private readonly prisma: PrismaService,
     private readonly customersRepo: CustomersRepository,
     private readonly auditService: AuditService,
+    private readonly notificationService: NotificationService,
   ) {}
 
   async getPendingDocuments() {
@@ -24,14 +26,25 @@ export class KycService {
 
     const updatedDoc = await this.customersRepo.updateDocumentReview(documentId, {
       status: dto.status,
-      reviewResult: dto.reviewResult,
+      reviewResult: dto.reviewResult || dto.reason,
       reviewerAdminId: adminId,
     });
 
     if (dto.status === 'REJECTED') {
       // Any rejection immediately marks the customer's KYC as REJECTED.
-      // They must resubmit via POST /customers/kyc/submit after fixing their documents.
       await this.customersRepo.updateKycStatus(document.customerId, KycStatus.REJECTED);
+
+      await this.notificationService.notify(
+        document.customerId,
+        NotificationType.DOCUMENT_REJECTED,
+        {
+          docType: document.docType,
+          reason: dto.reason || dto.reviewResult || 'Requirements not met',
+          documentId,
+          relatedEntityType: 'Document',
+          relatedEntityId: documentId,
+        },
+      );
     } else if (dto.status === 'APPROVED') {
       const [pendingCount, rejectedCount] = await Promise.all([
         this.prisma.document.count({ where: { customerId: document.customerId, status: 'PENDING' } }),
@@ -41,6 +54,17 @@ export class KycService {
       if (pendingCount === 0 && rejectedCount === 0) {
         await this.customersRepo.updateKycStatus(document.customerId, KycStatus.APPROVED);
       }
+
+      await this.notificationService.notify(
+        document.customerId,
+        NotificationType.DOCUMENT_APPROVED,
+        {
+          docType: document.docType,
+          documentId,
+          relatedEntityType: 'Document',
+          relatedEntityId: documentId,
+        },
+      );
     }
 
     await this.auditService.log({
@@ -73,6 +97,18 @@ export class KycService {
         overrideAdminId: adminId,
       },
     });
+
+    await this.notificationService.notify(
+      dto.customerId,
+      NotificationType.ELIGIBILITY_DECIDED,
+      {
+        status: dto.status,
+        participationLimit: dto.participationLimit,
+        decisionId: decision.id,
+        relatedEntityType: 'EligibilityDecision',
+        relatedEntityId: decision.id,
+      },
+    );
 
     await this.auditService.log({
       actorAdminId: adminId,

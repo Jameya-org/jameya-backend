@@ -1,12 +1,14 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ReservationExpiryJob } from './reservation-expiry.job';
 import { PrismaService } from '../prisma/prisma.service';
-import { MembershipStatus } from '@prisma/client';
+import { NotificationService } from '../modules/notifications/notifications.service';
+import { MembershipStatus, NotificationType } from '@prisma/client';
 
 describe('ReservationExpiryJob', () => {
   let job: ReservationExpiryJob;
   let prismaMock: any;
   let txMock: any;
+  let notificationServiceMock: any;
 
   beforeEach(async () => {
     txMock = {
@@ -14,9 +16,6 @@ describe('ReservationExpiryJob', () => {
         update: jest.fn(),
       },
       auditEvent: {
-        create: jest.fn(),
-      },
-      inAppNotification: {
         create: jest.fn(),
       },
     };
@@ -28,10 +27,15 @@ describe('ReservationExpiryJob', () => {
       $transaction: jest.fn((callback) => callback(txMock)),
     };
 
+    notificationServiceMock = {
+      notify: jest.fn(),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ReservationExpiryJob,
         { provide: PrismaService, useValue: prismaMock },
+        { provide: NotificationService, useValue: notificationServiceMock },
       ],
     }).compile();
 
@@ -69,13 +73,16 @@ describe('ReservationExpiryJob', () => {
       },
     });
 
-    expect(txMock.inAppNotification.create).toHaveBeenCalledWith({
-      data: {
-        customerId: 'cust-1',
-        title: 'Reservation Expired',
-        body: 'Your position reservation for payout position #3 has expired. You may restart the join flow to claim an available position.',
+    expect(notificationServiceMock.notify).toHaveBeenCalledWith(
+      'cust-1',
+      NotificationType.RESERVATION_EXPIRED,
+      {
+        position: 3,
+        circleId: 'circle-1',
+        relatedEntityType: 'Membership',
+        relatedEntityId: 'mem-expired-1',
       },
-    });
+    );
   });
 
   it('should do nothing if no expired reservations exist', async () => {

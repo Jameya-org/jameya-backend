@@ -11,9 +11,16 @@ import { AuditModule } from '../admin/audit/audit.module';
 import { ContractsModule } from '../contracts/contracts.module';
 import { AuthModule } from '../auth/auth.module';
 import { PaymentsModule } from '../payments/payments.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
-  imports: [AuditModule, ContractsModule, AuthModule, PaymentsModule],
+  imports: [
+    AuditModule,
+    ContractsModule,
+    AuthModule,
+    PaymentsModule,
+    NotificationsModule,
+  ],
   controllers: [
     CirclesController,
     FeePoliciesController,

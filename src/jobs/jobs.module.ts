@@ -6,8 +6,10 @@ import { PrismaModule } from '../prisma/prisma.module';
 import { InstallmentsModule } from '../modules/installments/installments.module';
 import { PaymentsModule } from '../modules/payments/payments.module';
 
+import { NotificationsModule } from '../modules/notifications/notifications.module';
+
 @Module({
-  imports: [PrismaModule, InstallmentsModule, PaymentsModule],
+  imports: [PrismaModule, InstallmentsModule, PaymentsModule, NotificationsModule],
   providers: [RefreshTokenCleanupJob, ReservationExpiryJob, InstallmentCollectionJob],
   exports: [RefreshTokenCleanupJob, ReservationExpiryJob, InstallmentCollectionJob],
 })

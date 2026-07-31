@@ -5,11 +5,15 @@ import { ListCustomersQueryDto } from './dto/list-customers-query.dto';
 import { UpdateCustomerStatusDto } from './dto/update-customer-status.dto';
 import { Prisma } from '@prisma/client';
 
+import { NotificationService } from 'src/modules/notifications/notifications.service';
+import { NotificationType } from '@prisma/client';
+
 @Injectable()
 export class AdminCustomersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditService: AuditService,
+    private readonly notificationService: NotificationService,
   ) {}
 
   async listCustomers(query: ListCustomersQueryDto) {
@@ -117,6 +121,17 @@ export class AdminCustomersService {
       data: { status: dto.status },
       select: { id: true, status: true, legalName: true, email: true, mobileNumber: true },
     });
+
+    await this.notificationService.notify(
+      customerId,
+      NotificationType.ACCOUNT_STATUS_CHANGED,
+      {
+        status: dto.status,
+        reason: dto.reason,
+        relatedEntityType: 'Customer',
+        relatedEntityId: customerId,
+      },
+    );
 
     await this.auditService.log({
       actorAdminId,

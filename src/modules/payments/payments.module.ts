@@ -7,8 +7,10 @@ import { PaymentsWebhookController } from './payments-webhook.controller';
 import { MockCardGatewayProvider } from './providers/mock-card-gateway.provider';
 import { PAYMENT_GATEWAY } from './providers/payment-gateway.interface';
 
+import { NotificationsModule } from '../notifications/notifications.module';
+
 @Module({
-  imports: [PrismaModule],
+  imports: [PrismaModule, NotificationsModule],
   controllers: [CustomerPaymentMethodsController, PaymentsWebhookController],
   providers: [
     LedgerService,

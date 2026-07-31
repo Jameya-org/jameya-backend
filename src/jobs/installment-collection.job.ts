@@ -7,7 +7,8 @@ import {
   IPaymentGateway,
   PAYMENT_GATEWAY,
 } from '../modules/payments/providers/payment-gateway.interface';
-import { InstallmentStatus, TransactionStatus } from '@prisma/client';
+import { NotificationService } from '../modules/notifications/notifications.service';
+import { InstallmentStatus, TransactionStatus, NotificationType } from '@prisma/client';
 
 @Injectable()
 export class InstallmentCollectionJob {
@@ -18,6 +19,7 @@ export class InstallmentCollectionJob {
     private readonly installmentsService: InstallmentsService,
     private readonly ledgerService: LedgerService,
     @Inject(PAYMENT_GATEWAY) private readonly gateway: any,
+    private readonly notificationService: NotificationService,
   ) {}
 
   @Cron(CronExpression.EVERY_DAY_AT_9AM)
@@ -39,13 +41,17 @@ export class InstallmentCollectionJob {
     });
 
     for (const inst of upcomingInstallments) {
-      await this.prisma.inAppNotification.create({
-        data: {
-          customerId: inst.membership.customerId,
-          title: 'Upcoming Installment Reminder',
-          body: `Your installment of EGP ${inst.amount} for Cycle #${inst.cycleNumber} is due in 3 days.`,
+      await this.notificationService.notify(
+        inst.membership.customerId,
+        NotificationType.INSTALLMENT_DUE_SOON,
+        {
+          amount: inst.amount,
+          dueDate: inst.dueDate,
+          installmentId: inst.id,
+          relatedEntityType: 'Installment',
+          relatedEntityId: inst.id,
         },
-      });
+      );
     }
   }
 

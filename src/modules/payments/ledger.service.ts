@@ -1,15 +1,20 @@
 import { Injectable, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { NotificationService } from '../notifications/notifications.service';
 import {
   Prisma,
   TransactionStatus,
   InstallmentStatus,
   LedgerAccount,
+  NotificationType,
 } from '@prisma/client';
 
 @Injectable()
 export class LedgerService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notificationService: NotificationService,
+  ) {}
 
   /**
    * Unified double-entry ledger poster for installment collection.
@@ -94,13 +99,17 @@ export class LedgerService {
     });
 
     // 4. Send customer in-app notification
-    await client.inAppNotification.create({
-      data: {
-        customerId: transaction.installment.membership.customerId,
-        title: 'Installment Paid Successfully',
-        body: `Your installment of EGP ${amountDecimal.toFixed(2)} (Cycle #${transaction.installment.cycleNumber}) has been paid. Receipt: ${receiptReference}`,
+    await this.notificationService.notify(
+      transaction.installment.membership.customerId,
+      NotificationType.INSTALLMENT_PAID,
+      {
+        amount: amountDecimal.toFixed(2),
+        receiptReference,
+        installmentId: transaction.installmentId,
+        relatedEntityType: 'Installment',
+        relatedEntityId: transaction.installmentId,
       },
-    });
+    );
 
     return {
       alreadySettled: false,

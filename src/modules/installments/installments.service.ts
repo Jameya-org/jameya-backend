@@ -21,12 +21,16 @@ import {
   ReviewStatus,
 } from '@prisma/client';
 
+import { NotificationService } from '../notifications/notifications.service';
+import { NotificationType } from '@prisma/client';
+
 @Injectable()
 export class InstallmentsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly ledgerService: LedgerService,
     @Inject(PAYMENT_GATEWAY) private readonly gateway: any,
+    private readonly notificationService: NotificationService,
   ) {}
 
   /**
@@ -280,14 +284,18 @@ export class InstallmentsService {
       },
     });
 
-    // Send generic retry notification to customer (SRS 14)
-    await this.prisma.inAppNotification.create({
-      data: {
-        customerId: installment.membership.customerId,
-        title: 'Payment Attempt Failed',
-        body: 'We could not process your installment payment. We will automatically retry tomorrow.',
+    // Send retry notification to customer
+    await this.notificationService.notify(
+      installment.membership.customerId,
+      NotificationType.INSTALLMENT_FAILED,
+      {
+        amount: installment.amount,
+        reason: result.failureReason,
+        installmentId: installment.id,
+        relatedEntityType: 'Installment',
+        relatedEntityId: installment.id,
       },
-    });
+    );
 
     return {
       status: 'failed_scheduled_retry',
@@ -398,13 +406,23 @@ export class InstallmentsService {
       },
     });
 
-    // Customer Notification
-    await this.prisma.inAppNotification.create({
-      data: {
-        customerId,
-        title: 'Installment Overdue',
-        body: `Your installment is overdue. New circle joins are restricted until all overdue installments are resolved. ${reasonMessage}`,
-      },
+    // Fetch installment amount for notification
+    const installment = await this.prisma.installment.findUnique({
+      where: { id: installmentId },
+      select: { amount: true },
     });
+
+    // Customer Notification
+    await this.notificationService.notify(
+      customerId,
+      NotificationType.INSTALLMENT_OVERDUE,
+      {
+        amount: installment?.amount,
+        reason: reasonMessage,
+        installmentId,
+        relatedEntityType: 'Installment',
+        relatedEntityId: installmentId,
+      },
+    );
   }
 }
