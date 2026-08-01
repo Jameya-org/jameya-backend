@@ -30,6 +30,36 @@ describe('CirclesService', () => {
     feePolicyId: 'fp-10',
     feePolicySnapshot: { '1': 10.0 },
     feePolicy: mockFeePolicy,
+    memberships: [
+      {
+        id: 'mem-1',
+        customerId: 'cust-1',
+        payoutPosition: 1,
+        status: 'ACTIVE',
+        customer: {
+          id: 'cust-1',
+          legalName: 'Mohamed Ahmed',
+          mobileNumber: '0123456789',
+          email: 'mohamed@example.com',
+        },
+        installments: [
+          {
+            id: 'inst-1',
+            cycleNumber: 1,
+            dueDate: new Date('2026-09-01'),
+            amount: 1000,
+            status: 'PAID',
+          },
+          {
+            id: 'inst-2',
+            cycleNumber: 2,
+            dueDate: new Date('2026-10-01'),
+            amount: 1000,
+            status: 'PENDING',
+          },
+        ],
+      },
+    ],
   };
 
   beforeEach(async () => {
@@ -87,7 +117,8 @@ describe('CirclesService', () => {
         include: { feePolicy: true },
       });
 
-      expect(result).toEqual(mockCircle);
+      expect(result.id).toEqual(mockCircle.id);
+      expect(result.overview).toBeDefined();
     });
 
     it('should throw BadRequestException if amount does not match contributionAmount * derived memberCapacity', async () => {
@@ -101,6 +132,41 @@ describe('CirclesService', () => {
       await expect(service.createCircle(dto as any)).rejects.toThrow(
         BadRequestException,
       );
+    });
+  });
+
+  describe('getCircleById', () => {
+    it('should return circle details with overview aggregates, formatted members, and payments summary', async () => {
+      const result = await service.getCircleById('circle-1');
+
+      expect(result.id).toBe('circle-1');
+      expect(result.circleCode).toBeDefined();
+      expect(result.overview).toEqual({
+        totalValue: 10000,
+        collectedAmount: 1000,
+        remainingAmount: 9000,
+        completionPercentage: 10,
+        currentMonthGauge: {
+          currentCycleNumber: 2,
+          targetAmount: 10000,
+          collectedAmount: 0,
+          paidCount: 0,
+          totalMembersCount: 10,
+        },
+      });
+
+      expect(result.formattedMembers).toHaveLength(1);
+      expect(result.formattedMembers[0]).toMatchObject({
+        legalName: 'Mohamed Ahmed',
+        mobileNumber: '0123456789',
+        payoutPosition: 1,
+        currentCycleStatus: 'PENDING',
+        paidInstallmentsCount: 1,
+      });
+
+      expect(result.paymentsSummary).toBeDefined();
+      expect(result.paymentsSummary.totalRounds).toBe(10);
+      expect(result.paymentsSummary.cycles).toHaveLength(10);
     });
   });
 });

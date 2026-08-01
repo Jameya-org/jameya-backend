@@ -138,7 +138,11 @@ export class CirclesService {
                 email: true,
               },
             },
+            installments: {
+              orderBy: { cycleNumber: 'asc' },
+            },
           },
+          orderBy: { payoutPosition: 'asc' },
         },
       },
     });
@@ -147,7 +151,147 @@ export class CirclesService {
       throw new NotFoundException(`Circle with ID ${id} not found`);
     }
 
-    return circle;
+    const circleCode = `JMY-${new Date(circle.startDate).getFullYear()}-${id.slice(0, 6).toUpperCase()}`;
+
+    // Flatten all installments across all memberships
+    const allInstallments = circle.memberships.flatMap((m) => m.installments);
+
+    const totalValue = Number(circle.amount);
+    const totalCollectedAmount = allInstallments
+      .filter((inst) => inst.status === 'PAID')
+      .reduce((sum, inst) => sum + Number(inst.amount), 0);
+
+    const totalRemainingAmount = Math.max(0, totalValue - totalCollectedAmount);
+    const completionPercentage =
+      totalValue > 0 ? Math.min(100, Math.round((totalCollectedAmount / totalValue) * 100)) : 0;
+
+    // Determine current active cycle number (earliest cycle with non-PAID installments, or default to 1)
+    const unpaidCycleNumbers = allInstallments
+      .filter((inst) => inst.status !== 'PAID')
+      .map((inst) => inst.cycleNumber);
+
+    const currentCycleNumber =
+      unpaidCycleNumbers.length > 0 ? Math.min(...unpaidCycleNumbers) : 1;
+
+    // Current month collection metrics
+    const currentCycleInstallments = allInstallments.filter(
+      (inst) => inst.cycleNumber === currentCycleNumber,
+    );
+    const currentMonthPaidInstallments = currentCycleInstallments.filter(
+      (inst) => inst.status === 'PAID',
+    );
+    const currentMonthCollectedAmount = currentMonthPaidInstallments.reduce(
+      (sum, inst) => sum + Number(inst.amount),
+      0,
+    );
+    const currentMonthTargetAmount =
+      Number(circle.contributionAmount) * circle.memberCapacity;
+
+    // Format Members list with current cycle payment status
+    const members = circle.memberships.map((m) => {
+      const currentInst = m.installments.find(
+        (inst) => inst.cycleNumber === currentCycleNumber,
+      );
+      const paidCount = m.installments.filter((inst) => inst.status === 'PAID').length;
+
+      return {
+        id: m.id,
+        customerId: m.customerId,
+        legalName: m.customer?.legalName || 'N/A',
+        mobileNumber: m.customer?.mobileNumber || 'N/A',
+        email: m.customer?.email || null,
+        payoutPosition: m.payoutPosition,
+        membershipStatus: m.status,
+        currentCycleStatus: currentInst ? currentInst.status : 'PENDING',
+        paidInstallmentsCount: paidCount,
+        totalInstallmentsCount: m.installments.length,
+      };
+    });
+
+    // Build Payments / Collection Rounds summary by cycle (1 to durationMonths)
+    const cycles = Array.from({ length: circle.durationMonths }, (_, i) => {
+      const cycleNum = i + 1;
+      const cycleInsts = allInstallments.filter((inst) => inst.cycleNumber === cycleNum);
+
+      // Determine due date from existing installments or calculate from startDate
+      let dueDate: Date;
+      if (cycleInsts.length > 0 && cycleInsts[0].dueDate) {
+        dueDate = cycleInsts[0].dueDate;
+      } else {
+        dueDate = new Date(circle.startDate);
+        dueDate.setMonth(dueDate.getMonth() + i);
+      }
+
+      const paidCount = cycleInsts.filter((inst) => inst.status === 'PAID').length;
+      const pendingCount = cycleInsts.filter((inst) => inst.status === 'PENDING').length;
+      const overdueCount = cycleInsts.filter((inst) => inst.status === 'OVERDUE').length;
+      const failedCount = cycleInsts.filter((inst) => inst.status === 'FAILED').length;
+
+      const cycleCollectedAmount = cycleInsts
+        .filter((inst) => inst.status === 'PAID')
+        .reduce((sum, inst) => sum + Number(inst.amount), 0);
+
+      const cycleTotalAmount =
+        cycleInsts.length > 0
+          ? cycleInsts.reduce((sum, inst) => sum + Number(inst.amount), 0)
+          : Number(circle.contributionAmount) * circle.memberCapacity;
+
+      let cycleStatus: 'COMPLETED' | 'PARTIAL' | 'OVERDUE' | 'UPCOMING';
+      if (paidCount > 0 && paidCount === (cycleInsts.length || circle.memberCapacity)) {
+        cycleStatus = 'COMPLETED';
+      } else if (overdueCount > 0 || failedCount > 0) {
+        cycleStatus = 'OVERDUE';
+      } else if (paidCount > 0) {
+        cycleStatus = 'PARTIAL';
+      } else {
+        cycleStatus = 'UPCOMING';
+      }
+
+      return {
+        cycleNumber: cycleNum,
+        dueDate,
+        status: cycleStatus,
+        totalAmount: cycleTotalAmount,
+        collectedAmount: cycleCollectedAmount,
+        paidCount,
+        pendingCount,
+        overdueCount,
+        failedCount,
+        totalMembersCount: cycleInsts.length || circle.memberCapacity,
+      };
+    });
+
+    const completedRounds = cycles.filter((c) => c.status === 'COMPLETED').length;
+    const partialRounds = cycles.filter((c) => c.status === 'PARTIAL').length;
+    const overdueRounds = cycles.filter((c) => c.status === 'OVERDUE').length;
+    const upcomingRounds = cycles.filter((c) => c.status === 'UPCOMING').length;
+
+    return {
+      ...circle,
+      circleCode,
+      overview: {
+        totalValue,
+        collectedAmount: totalCollectedAmount,
+        remainingAmount: totalRemainingAmount,
+        completionPercentage,
+        currentMonthGauge: {
+          currentCycleNumber,
+          targetAmount: currentMonthTargetAmount,
+          collectedAmount: currentMonthCollectedAmount,
+          paidCount: currentMonthPaidInstallments.length,
+          totalMembersCount: circle.memberCapacity,
+        },
+      },
+      formattedMembers: members,
+      paymentsSummary: {
+        totalRounds: circle.durationMonths,
+        completedRounds,
+        partialRounds,
+        overdueRounds,
+        upcomingRounds,
+        cycles,
+      },
+    };
   }
 
   /**

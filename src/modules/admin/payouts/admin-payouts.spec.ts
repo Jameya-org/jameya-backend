@@ -8,8 +8,8 @@ import { PayoutStatus, Prisma, LedgerAccount } from '@prisma/client';
 
 describe('Admin Payouts & Late Payment Logic', () => {
   let service: AdminPayoutsService;
-  let prismaService: jest.Mocked<PrismaService>;
-  let notificationService: jest.Mocked<NotificationService>;
+  let prismaService: any;
+  let notificationService: any;
 
   beforeEach(async () => {
     const mockPrisma = {
@@ -42,8 +42,8 @@ describe('Admin Payouts & Late Payment Logic', () => {
     }).compile();
 
     service = module.get<AdminPayoutsService>(AdminPayoutsService);
-    prismaService = module.get(PrismaService);
-    notificationService = module.get(NotificationService);
+    prismaService = module.get(PrismaService) as any;
+    notificationService = module.get(NotificationService) as any;
   });
 
   describe('daysLate Calculation Logic', () => {
