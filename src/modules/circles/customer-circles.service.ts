@@ -129,7 +129,7 @@ export class CustomerCirclesService {
     const limit = query.limit ?? 10;
 
     const where: Prisma.CircleWhereInput = {
-      status: CircleStatus.UPCOMING,
+      status: query.status ?? CircleStatus.UPCOMING,
     };
 
     if (query.durationMonths) {
@@ -146,22 +146,23 @@ export class CustomerCirclesService {
       }
     }
 
-    const allUpcoming = await this.prisma.circle.findMany({
+    const allCircles = await this.prisma.circle.findMany({
       where,
       orderBy: { startDate: 'asc' },
     });
 
-    // Filter available capacity (currentMembersCount < memberCapacity)
-    const availableCircles = allUpcoming.filter(
-      (c) => c.currentMembersCount < c.memberCapacity,
-    );
+    const filteredCircles =
+      query.status === undefined || query.status === CircleStatus.UPCOMING
+        ? allCircles.filter((c) => c.currentMembersCount < c.memberCapacity)
+        : allCircles;
 
-    const total = availableCircles.length;
+    const total = filteredCircles.length;
     const totalPages = Math.ceil(total / limit) || 1;
-    const paginated = availableCircles.slice((page - 1) * limit, page * limit);
+    const paginated = filteredCircles.slice((page - 1) * limit, page * limit);
 
     const data = paginated.map((c) => ({
       id: c.id,
+      title: `جمعية شهر ${new Date(c.startDate).getMonth() + 1}`,
       amount: c.amount,
       contributionAmount: c.contributionAmount,
       durationMonths: c.durationMonths,
@@ -215,6 +216,7 @@ export class CustomerCirclesService {
 
     return {
       id: circle.id,
+      title: `جمعية شهر ${new Date(circle.startDate).getMonth() + 1}`,
       amount: circle.amount,
       contributionAmount: circle.contributionAmount,
       durationMonths: circle.durationMonths,
@@ -255,18 +257,10 @@ export class CustomerCirclesService {
     // Fetch customer's existing memberships
     const existingMemberships = await this.prisma.membership.findMany({
       where: { customerId },
-      select: {
-        circleId: true,
-        status: true,
-        circle: {
-          select: { id: true },
-        },
+      include: {
+        circle: true,
         installments: {
-          where: {
-            status: { in: [InstallmentStatus.PENDING, InstallmentStatus.OVERDUE] },
-          },
-          orderBy: { dueDate: 'asc' },
-          take: 1,
+          orderBy: { cycleNumber: 'asc' },
         },
         payout: true,
       },
@@ -289,6 +283,7 @@ export class CustomerCirclesService {
       })
       .map((c) => ({
         id: c.id,
+        title: `جمعية شهر ${new Date(c.startDate).getMonth() + 1}`,
         amount: c.amount,
         contributionAmount: c.contributionAmount,
         durationMonths: c.durationMonths,
@@ -309,8 +304,13 @@ export class CustomerCirclesService {
     let earliestDueDate: Date | null = null;
 
     for (const m of activeMemberships) {
-      if (m.installments && m.installments.length > 0) {
-        const inst = m.installments[0];
+      const pendingOrOverdue = m.installments.filter(
+        (inst) =>
+          inst.status === InstallmentStatus.PENDING ||
+          inst.status === InstallmentStatus.OVERDUE,
+      );
+      if (pendingOrOverdue.length > 0) {
+        const inst = pendingOrOverdue[0];
         const instDueDate = new Date(inst.dueDate);
         if (!earliestDueDate || instDueDate < earliestDueDate) {
           earliestDueDate = instDueDate;
@@ -348,9 +348,52 @@ export class CustomerCirclesService {
       }
     }
 
+    // Active circle details card (if user is in an active circle)
+    let activeCircle: any = null;
+    if (activeMemberships.length > 0) {
+      const primaryMembership = activeMemberships[0];
+      const paidCount = primaryMembership.installments.filter(
+        (inst) => inst.status === InstallmentStatus.PAID,
+      ).length;
+      let currentCycleNumber = paidCount + 1;
+      if (currentCycleNumber > primaryMembership.circle.durationMonths) {
+        currentCycleNumber = primaryMembership.circle.durationMonths;
+      }
+
+      const startMonth = new Date(primaryMembership.circle.startDate).getMonth() + 1;
+
+      activeCircle = {
+        circleId: primaryMembership.circleId,
+        title: `جمعية شهر ${startMonth}`,
+        status: primaryMembership.circle.status,
+        monthlyContribution: primaryMembership.circle.contributionAmount,
+        nextDueDate: nextDueInstallment ? nextDueInstallment.dueDate : null,
+        payoutPosition: primaryMembership.payoutPosition,
+        memberCapacity: primaryMembership.circle.memberCapacity,
+        currentCycleNumber,
+        durationMonths: primaryMembership.circle.durationMonths,
+      };
+    }
+
+    // Fetch recent notifications for activities feed
+    const recentNotifications = await this.prisma.inAppNotification.findMany({
+      where: { customerId },
+      orderBy: { createdAt: 'desc' },
+      take: 5,
+      select: {
+        id: true,
+        title: true,
+        body: true,
+        type: true,
+        createdAt: true,
+      },
+    });
+
     return {
       eligible: true,
       recommendedCircles,
+      activeCircle,
+      recentActivities: recentNotifications,
       dashboard: {
         activeCircleCount: activeMemberships.length,
         currentTotalObligation: currentObligation.toFixed(2),
@@ -359,6 +402,57 @@ export class CustomerCirclesService {
         nextPayoutDate,
       },
     };
+  }
+
+  /**
+   * Endpoint for My Circles Progress screen ("تقدم الجمعيات")
+   * GET /customer/my-circles
+   */
+  async getMyCirclesProgress(customerId: string) {
+    const memberships = await this.prisma.membership.findMany({
+      where: { customerId },
+      include: {
+        circle: true,
+        installments: {
+          orderBy: { cycleNumber: 'asc' },
+        },
+      },
+      orderBy: { joinedAt: 'desc' },
+    });
+
+    const circles = memberships.map((m) => {
+      const paidCount = m.installments.filter(
+        (inst) => inst.status === InstallmentStatus.PAID,
+      ).length;
+      let currentCycleNumber = paidCount + 1;
+      if (currentCycleNumber > m.circle.durationMonths) {
+        currentCycleNumber = m.circle.durationMonths;
+      }
+      if (m.status === MembershipStatus.COMPLETED) {
+        currentCycleNumber = m.circle.durationMonths;
+      }
+
+      const startMonth = new Date(m.circle.startDate).getMonth() + 1;
+
+      return {
+        membershipId: m.id,
+        circleId: m.circleId,
+        title: `جمعية شهر ${startMonth}`,
+        status:
+          m.status === MembershipStatus.ACTIVE
+            ? 'ACTIVE'
+            : m.status === MembershipStatus.COMPLETED
+              ? 'COMPLETED'
+              : m.status,
+        payoutPosition: m.payoutPosition,
+        currentCycleNumber,
+        durationMonths: m.circle.durationMonths,
+        monthlyContribution: m.circle.contributionAmount,
+        startDate: m.circle.startDate,
+      };
+    });
+
+    return { circles };
   }
 
   /**

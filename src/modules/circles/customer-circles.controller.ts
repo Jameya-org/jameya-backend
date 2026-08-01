@@ -61,6 +61,13 @@ export class CustomerCirclesController {
     return this.customerCirclesService.getHomeRecommendations(req.user.id);
   }
 
+  @Get('my-circles')
+  @ApiOperation({ summary: 'Customer joined circles progress list (تقدم الجمعيات)' })
+  @ApiResponse({ status: 200, description: 'List of user joined circles with progress metrics' })
+  async getMyCirclesProgress(@Req() req: AuthenticatedRequest) {
+    return this.customerCirclesService.getMyCirclesProgress(req.user.id);
+  }
+
   @Post('circles/:id/join-intent')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Pre-check eligibility and capacity before joining flow' })

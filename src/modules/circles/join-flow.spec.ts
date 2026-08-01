@@ -400,4 +400,42 @@ describe('CustomerCirclesService - Full Join & Contract Signing Flow', () => {
       expect(result.installments.length).toBe(3);
     });
   });
+
+  describe('getMyCirclesProgress', () => {
+    it('should return list of user joined circles with progress metrics', async () => {
+      prismaMock.membership.findMany = jest.fn().mockResolvedValue([
+        {
+          id: 'mem-1',
+          circleId: 'circle-1',
+          payoutPosition: 6,
+          status: MembershipStatus.ACTIVE,
+          circle: {
+            durationMonths: 12,
+            contributionAmount: new Prisma.Decimal(1000),
+            startDate: new Date('2026-10-01'),
+          },
+          installments: [
+            { cycleNumber: 1, status: 'PAID' },
+            { cycleNumber: 2, status: 'PAID' },
+            { cycleNumber: 3, status: 'PAID' },
+            { cycleNumber: 4, status: 'PAID' },
+            { cycleNumber: 5, status: 'PENDING' },
+          ],
+        },
+      ]);
+
+      const result = await service.getMyCirclesProgress(mockCustomerId);
+
+      expect(result.circles).toHaveLength(1);
+      expect(result.circles[0]).toMatchObject({
+        membershipId: 'mem-1',
+        circleId: 'circle-1',
+        title: 'جمعية شهر 10',
+        status: 'ACTIVE',
+        payoutPosition: 6,
+        currentCycleNumber: 5,
+        durationMonths: 12,
+      });
+    });
+  });
 });

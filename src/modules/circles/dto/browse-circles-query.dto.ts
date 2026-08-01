@@ -1,5 +1,6 @@
-import { IsOptional, IsInt, Min, IsNumber } from 'class-validator';
+import { IsOptional, IsInt, Min, IsNumber, IsEnum } from 'class-validator';
 import { Type } from 'class-transformer';
+import { CircleStatus } from '@prisma/client';
 
 export class BrowseCirclesQueryDto {
   @IsOptional()
@@ -28,4 +29,8 @@ export class BrowseCirclesQueryDto {
   @Type(() => Number)
   @IsNumber()
   maxAmount?: number;
+
+  @IsOptional()
+  @IsEnum(CircleStatus)
+  status?: CircleStatus;
 }

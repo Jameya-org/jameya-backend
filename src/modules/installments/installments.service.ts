@@ -108,6 +108,105 @@ export class InstallmentsService {
   }
 
   /**
+   * GET /customer/installments/history
+   * Unified timeline of paid/overdue installments and disbursed payouts for "سجل المعاملات"
+   */
+  async getPaymentHistory(customerId: string) {
+    const memberships = await this.prisma.membership.findMany({
+      where: { customerId },
+      include: {
+        circle: true,
+        installments: {
+          orderBy: { cycleNumber: 'asc' },
+        },
+        payout: true,
+      },
+    });
+
+    let nextDueInstallmentCard: any = null;
+    let earliestDueDate: Date | null = null;
+    const historyList: any[] = [];
+
+    for (const m of memberships) {
+      const startMonth = new Date(m.circle.startDate).getMonth() + 1;
+      const circleTitle = `جمعية شهر ${startMonth}`;
+
+      // Check installments
+      for (const inst of m.installments) {
+        const instAmount = new Prisma.Decimal(inst.amount).toFixed(2);
+
+        // Find next due installment for top card
+        if (
+          inst.status === InstallmentStatus.PENDING ||
+          inst.status === InstallmentStatus.OVERDUE
+        ) {
+          const instDueDate = new Date(inst.dueDate);
+          if (!earliestDueDate || instDueDate < earliestDueDate) {
+            earliestDueDate = instDueDate;
+            nextDueInstallmentCard = {
+              installmentId: inst.id,
+              circleId: m.circleId,
+              circleTitle,
+              amount: instAmount,
+              dueDate: inst.dueDate,
+              status:
+                inst.status === InstallmentStatus.OVERDUE
+                  ? 'OVERDUE'
+                  : 'DUE_SOON',
+            };
+          }
+        }
+
+        // Add to history timeline feed
+        if (inst.status === InstallmentStatus.PAID) {
+          historyList.push({
+            id: inst.id,
+            type: 'INSTALLMENT_PAID',
+            circleTitle,
+            cycleNumber: inst.cycleNumber,
+            amount: instAmount,
+            date: inst.paidDate || inst.dueDate,
+            status: 'PAID',
+          });
+        } else if (inst.status === InstallmentStatus.OVERDUE) {
+          historyList.push({
+            id: inst.id,
+            type: 'INSTALLMENT_OVERDUE',
+            circleTitle,
+            cycleNumber: inst.cycleNumber,
+            amount: instAmount,
+            date: inst.dueDate,
+            status: 'OVERDUE',
+          });
+        }
+      }
+
+      // Check payout
+      if (m.payout && (m.payout.status as string) === 'DISBURSED') {
+        const payoutAmount = new Prisma.Decimal(m.payout.netAmount).toFixed(2);
+        historyList.push({
+          id: m.payout.id,
+          type: 'PAYOUT_DISBURSED',
+          circleTitle,
+          amount: payoutAmount,
+          date: m.payout.disbursedAt || m.payout.scheduledAt,
+          status: 'DISBURSED',
+        });
+      }
+    }
+
+    // Sort history timeline by date descending
+    historyList.sort(
+      (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
+    );
+
+    return {
+      nextDueInstallment: nextDueInstallmentCard,
+      transactions: historyList,
+    };
+  }
+
+  /**
    * GET /customer/installments/:id (FR-11)
    * Single installment breakdown with transaction history & receipt
    */
@@ -144,6 +243,7 @@ export class InstallmentsService {
     return {
       installmentId: installment.id,
       circleId: installment.membership.circleId,
+      circleTitle: `جمعية شهر ${new Date(installment.membership.circle.startDate).getMonth() + 1}`,
       cycleNumber: installment.cycleNumber,
       dueDate: installment.dueDate,
       amount: new Prisma.Decimal(installment.amount).toFixed(2),
@@ -166,6 +266,36 @@ export class InstallmentsService {
         settledAt: tx.settledAt,
       })),
     };
+  }
+
+  /**
+   * POST /customer/installments/:id/pay
+   * Trigger immediate payment for due/overdue installment via customer default payment method ("ادفع الآن")
+   */
+  async payInstallment(customerId: string, installmentId: string) {
+    const installment = await this.prisma.installment.findUnique({
+      where: { id: installmentId },
+      include: {
+        membership: true,
+      },
+    });
+
+    if (!installment) {
+      throw new NotFoundException(`Installment with ID ${installmentId} not found`);
+    }
+
+    if (installment.membership.customerId !== customerId) {
+      throw new ForbiddenException('Access denied to installment');
+    }
+
+    if (installment.status === InstallmentStatus.PAID) {
+      throw new UnprocessableEntityException({
+        reason: 'already_paid',
+        message: 'Installment is already paid.',
+      });
+    }
+
+    return this.processGatewayCollection(installmentId);
   }
 
   /**
