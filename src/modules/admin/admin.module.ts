@@ -24,9 +24,14 @@ import { AdminUsersService } from './admin-users/admin-users.service';
 import { AdminCustomersController } from './customers/admin-customers.controller';
 import { AdminCustomersService } from './customers/admin-customers.service';
 
-// Payments
+// Payments & Transactions
 import { AdminPaymentsController } from './payments/admin-payments.controller';
 import { AdminPaymentsService } from './payments/admin-payments.service';
+import { AdminTransactionsController } from './transactions/admin-transactions.controller';
+
+// Payouts
+import { AdminPayoutsController } from './payouts/admin-payouts.controller';
+import { AdminPayoutsService } from './payouts/admin-payouts.service';
 
 // Audit & Roles
 import { AuditController } from './audit/audit.controller';
@@ -68,6 +73,8 @@ import { NotificationsModule } from '../notifications/notifications.module';
     AdminCirclesController,
     AdminMembershipsController,
     AdminInstallmentsController,
+    AdminTransactionsController,
+    AdminPayoutsController,
   ],
   providers: [
     AdminAuthService,
@@ -81,6 +88,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
     AuditService,
     RolesService,
     AdminMembershipsService,
+    AdminPayoutsService,
   ],
   exports: [
     AdminAuthService,
@@ -88,6 +96,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
     RolesService,
     AuditModule,
     AdminMembershipsService,
+    AdminPayoutsService,
   ],
 })
 export class AdminModule {}

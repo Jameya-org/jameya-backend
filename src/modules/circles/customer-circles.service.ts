@@ -894,7 +894,56 @@ export class CustomerCirclesService {
         installments.push(installment);
       }
 
-      // 4. Audit Event
+      // 4. Automatic Payout record creation for this membership
+      const feeCalc = this.feeCalculatorService.calculateNetPayout(
+        {
+          amount: membership.circle.amount,
+          feePolicySnapshot: membership.circle.feePolicySnapshot,
+          durationMonths: membership.circle.durationMonths,
+        },
+        membership.payoutPosition,
+      );
+
+      const scheduledAt = new Date(startDate);
+      scheduledAt.setMonth(startDate.getMonth() + (membership.payoutPosition - 1));
+
+      let beneficiaryToken = 'DEFAULT_TOKEN';
+      if (membership.defaultPaymentMethodId && tx.paymentMethod) {
+        const pm = await tx.paymentMethod.findUnique({
+          where: { id: membership.defaultPaymentMethodId },
+        });
+        if (pm?.providerToken) {
+          beneficiaryToken = pm.providerToken;
+        }
+      }
+      if (beneficiaryToken === 'DEFAULT_TOKEN' && tx.paymentMethod) {
+        const defaultPm = await tx.paymentMethod.findFirst({
+          where: {
+            customerId: membership.customerId,
+            isDefault: true,
+            removedAt: null,
+          },
+        });
+        if (defaultPm?.providerToken) {
+          beneficiaryToken = defaultPm.providerToken;
+        }
+      }
+
+      if (tx.payout) {
+        await tx.payout.create({
+          data: {
+            membershipId,
+            grossAmount: feeCalc.gross,
+            feeAmount: feeCalc.feeAmount,
+            netAmount: feeCalc.net,
+            beneficiaryToken,
+            status: PayoutStatus.SCHEDULED,
+            scheduledAt,
+          },
+        });
+      }
+
+      // 5. Audit Event
       await tx.auditEvent.create({
         data: {
           entityType: 'membership',
@@ -904,7 +953,7 @@ export class CustomerCirclesService {
         },
       });
 
-      // 5. Increment Circle currentMembersCount
+      // 6. Increment Circle currentMembersCount
       await tx.circle.update({
         where: { id: membership.circleId },
         data: {
