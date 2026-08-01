@@ -16,6 +16,7 @@ import { ApiTags, ApiOperation, ApiBearerAuth, ApiResponse } from '@nestjs/swagg
 import type { Response } from 'express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CustomerCirclesService } from './customer-circles.service';
+import { CustomersService } from '../customers/customers.service';
 import { BrowseCirclesQueryDto } from './dto/browse-circles-query.dto';
 import { StartJoinDto } from './dto/start-join.dto';
 import { AcceptContractDto } from './dto/accept-contract.dto';
@@ -32,6 +33,7 @@ interface AuthenticatedRequest extends Request {
 export class CustomerCirclesController {
   constructor(
     private readonly customerCirclesService: CustomerCirclesService,
+    private readonly customersService: CustomersService,
   ) {}
 
   @Get('circles')
@@ -141,5 +143,13 @@ export class CustomerCirclesController {
       dto,
       requestContext,
     );
+  }
+  @Get('history')
+  @ApiOperation({
+    summary: 'Get unified customer dashboard summary & historical activity feed (GET /customer/history)',
+  })
+  @ApiResponse({ status: 200, description: 'Summary, active circles, and chronological timeline feed' })
+  async getCustomerHistory(@Req() req: AuthenticatedRequest) {
+    return this.customersService.getCustomerHistory(req.user.id);
   }
 }

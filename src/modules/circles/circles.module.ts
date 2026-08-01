@@ -12,6 +12,7 @@ import { ContractsModule } from '../contracts/contracts.module';
 import { AuthModule } from '../auth/auth.module';
 import { PaymentsModule } from '../payments/payments.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { CustomersModule } from '../customers/customers.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
     AuthModule,
     PaymentsModule,
     NotificationsModule,
+    CustomersModule,
   ],
   controllers: [
     CirclesController,

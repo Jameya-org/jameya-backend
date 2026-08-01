@@ -234,4 +234,89 @@ export class ContractsService {
       },
     });
   }
+
+  /**
+   * List all signed contracts for a customer (FR-10).
+   */
+  async getCustomerContracts(customerId: string) {
+    const contracts = await this.prisma.contract.findMany({
+      where: {
+        membership: {
+          customerId,
+        },
+      },
+      include: {
+        membership: {
+          include: {
+            circle: {
+              select: {
+                id: true,
+                amount: true,
+                contributionAmount: true,
+                durationMonths: true,
+                startDate: true,
+              },
+            },
+          },
+        },
+      },
+      orderBy: { signedAt: 'desc' },
+    });
+
+    return contracts.map((c) => ({
+      id: c.id,
+      membershipId: c.membershipId,
+      circleId: c.membership.circleId,
+      circleTitle: `جمعية شهر ${new Date(c.membership.circle.startDate).getMonth() + 1}`,
+      templateVersion: c.templateVersion,
+      renderedFileRef: c.renderedFileRef,
+      docHash: c.docHash,
+      signedAt: c.signedAt,
+      acceptanceEvidence: c.acceptanceEvidence,
+    }));
+  }
+
+  /**
+   * Retrieve a specific signed contract by membership ID (FR-10).
+   */
+  async getContractByMembershipId(customerId: string, membershipId: string) {
+    const contract = await this.prisma.contract.findFirst({
+      where: {
+        membershipId,
+        membership: { customerId },
+      },
+      include: {
+        membership: {
+          include: {
+            circle: true,
+            customer: {
+              select: { legalName: true, mobileNumber: true, email: true },
+            },
+          },
+        },
+      },
+    });
+
+    if (!contract) {
+      throw new NotFoundException('Signed contract not found for this membership');
+    }
+
+    return {
+      id: contract.id,
+      membershipId: contract.membershipId,
+      templateVersion: contract.templateVersion,
+      renderedFileRef: contract.renderedFileRef,
+      docHash: contract.docHash,
+      signedAt: contract.signedAt,
+      acceptanceEvidence: contract.acceptanceEvidence,
+      customerName: contract.membership.customer.legalName,
+      circleDetails: {
+        circleId: contract.membership.circle.id,
+        amount: contract.membership.circle.amount,
+        durationMonths: contract.membership.circle.durationMonths,
+        payoutPosition: contract.membership.payoutPosition,
+      },
+    };
+  }
 }
+

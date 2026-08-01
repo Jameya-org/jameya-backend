@@ -180,4 +180,159 @@ export class CustomersService {
       createdAt: customer.createdAt,
     };
   }
+
+  /**
+   * GET /customer/history
+   * Unified customer dashboard & historical activity feed.
+   */
+  async getCustomerHistory(customerId: string) {
+    const customer = await this.prisma.customer.findUnique({
+      where: { id: customerId },
+      include: {
+        eligibilityDecisions: {
+          orderBy: { decidedAt: 'desc' },
+          take: 1,
+        },
+        memberships: {
+          include: {
+            circle: true,
+            installments: {
+              orderBy: { cycleNumber: 'asc' },
+            },
+            payout: true,
+            contract: true,
+          },
+        },
+      },
+    });
+
+    if (!customer) {
+      throw new NotFoundException('Customer not found');
+    }
+
+    const latestEligibility = customer.eligibilityDecisions[0];
+    const participationLimit = latestEligibility
+      ? new Prisma.Decimal(latestEligibility.participationLimit).toFixed(2)
+      : '0.00';
+
+    let activeObligationTotal = new Prisma.Decimal(0);
+    let overdueCount = 0;
+    let nextDueInstallment: any = null;
+    let earliestDueDate: Date | null = null;
+    let nextPayoutDate: any = null;
+    let earliestPayoutDate: Date | null = null;
+
+    const timeline: any[] = [];
+    const activeCircles: any[] = [];
+
+    for (const m of customer.memberships) {
+      const circleContribution = new Prisma.Decimal(m.circle.contributionAmount);
+
+      if (m.status === 'ACTIVE') {
+        activeObligationTotal = activeObligationTotal.add(circleContribution);
+        const startMonth = new Date(m.circle.startDate).getMonth() + 1;
+
+        activeCircles.push({
+          membershipId: m.id,
+          circleId: m.circleId,
+          title: `جمعية شهر ${startMonth}`,
+          payoutPosition: m.payoutPosition,
+          monthlyContribution: circleContribution.toFixed(2),
+          durationMonths: m.circle.durationMonths,
+          status: m.status,
+        });
+      }
+
+      // Process Installments
+      for (const inst of m.installments) {
+        const instAmt = new Prisma.Decimal(inst.amount).toFixed(2);
+        const circleTitle = `جمعية شهر ${new Date(m.circle.startDate).getMonth() + 1}`;
+
+        if (inst.status === 'OVERDUE') {
+          overdueCount++;
+          timeline.push({
+            type: 'INSTALLMENT_OVERDUE',
+            title: 'قسط متأخر',
+            circleTitle,
+            cycleNumber: inst.cycleNumber,
+            amount: instAmt,
+            date: inst.dueDate,
+          });
+        } else if (inst.status === 'PAID') {
+          timeline.push({
+            type: 'INSTALLMENT_PAID',
+            title: 'تم دفع القسط',
+            circleTitle,
+            cycleNumber: inst.cycleNumber,
+            amount: instAmt,
+            date: inst.paidDate || inst.dueDate,
+          });
+        } else if (inst.status === 'PENDING' && m.status === 'ACTIVE') {
+          const instDueDate = new Date(inst.dueDate);
+          if (!earliestDueDate || instDueDate < earliestDueDate) {
+            earliestDueDate = instDueDate;
+            nextDueInstallment = {
+              installmentId: inst.id,
+              circleTitle,
+              amount: instAmt,
+              dueDate: inst.dueDate,
+            };
+          }
+        }
+      }
+
+      // Process Payout
+      if (m.payout) {
+        const payoutAmt = new Prisma.Decimal(m.payout.netAmount).toFixed(2);
+        const circleTitle = `جمعية شهر ${new Date(m.circle.startDate).getMonth() + 1}`;
+
+        if (m.payout.status === 'DISBURSED') {
+          timeline.push({
+            type: 'PAYOUT_DISBURSED',
+            title: 'تم استلام قبض الجمعية',
+            circleTitle,
+            amount: payoutAmt,
+            date: m.payout.disbursedAt || m.payout.scheduledAt,
+          });
+        } else if (m.payout.status === 'SCHEDULED' || m.payout.status === 'PROCESSING') {
+          const pDate = new Date(m.payout.scheduledAt);
+          if (!earliestPayoutDate || pDate < earliestPayoutDate) {
+            earliestPayoutDate = pDate;
+            nextPayoutDate = {
+              payoutId: m.payout.id,
+              circleTitle,
+              netAmount: payoutAmt,
+              scheduledAt: m.payout.scheduledAt,
+            };
+          }
+        }
+      }
+
+      // Process Contract
+      if (m.contract) {
+        timeline.push({
+          type: 'CONTRACT_SIGNED',
+          title: 'تم توقيع العقد',
+          circleTitle: `جمعية شهر ${new Date(m.circle.startDate).getMonth() + 1}`,
+          docHash: m.contract.docHash,
+          date: m.contract.signedAt,
+        });
+      }
+    }
+
+    // Sort timeline descending by date
+    timeline.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+    return {
+      summary: {
+        activeObligationTotal: activeObligationTotal.toFixed(2),
+        participationLimit,
+        overdueCount,
+        nextDueInstallment,
+        nextPayoutDate,
+      },
+      activeCircles,
+      timeline,
+    };
+  }
 }
