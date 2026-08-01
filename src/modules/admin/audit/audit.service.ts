@@ -39,5 +39,65 @@ export class AuditService {
       },
     });
   }
+
+  /**
+   * Retrieves queryable, paginated audit logs for admin review (ADM-15).
+   */
+  async getAuditEvents(query: any) {
+    const page = Number(query.page || 1);
+    const limit = Number(query.limit || 20);
+    const skip = (page - 1) * limit;
+
+    const where: Prisma.AuditEventWhereInput = {};
+
+    if (query.actorAdminId) {
+      where.actorAdminId = query.actorAdminId;
+    }
+    if (query.entityType) {
+      where.entityType = query.entityType;
+    }
+    if (query.entityId) {
+      where.entityId = query.entityId;
+    }
+    if (query.action) {
+      where.action = query.action;
+    }
+    if (query.startDate || query.endDate) {
+      where.occurredAt = {};
+      if (query.startDate) {
+        where.occurredAt.gte = new Date(query.startDate);
+      }
+      if (query.endDate) {
+        where.occurredAt.lte = new Date(query.endDate);
+      }
+    }
+
+    const [total, data] = await Promise.all([
+      this.prisma.auditEvent.count({ where }),
+      this.prisma.auditEvent.findMany({
+        where,
+        orderBy: { occurredAt: 'desc' },
+        skip,
+        take: limit,
+        include: {
+          actorAdmin: {
+            select: {
+              id: true,
+              email: true,
+            },
+          },
+        },
+      }),
+    ]);
+
+    return {
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+      data,
+    };
+  }
 }
+
 

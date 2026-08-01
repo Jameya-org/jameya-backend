@@ -33,9 +33,7 @@ import { AdminTransactionsController } from './transactions/admin-transactions.c
 import { AdminPayoutsController } from './payouts/admin-payouts.controller';
 import { AdminPayoutsService } from './payouts/admin-payouts.service';
 
-// Audit & Roles
-import { AuditController } from './audit/audit.controller';
-import { AuditService } from './audit/audit.service';
+// Roles
 import { RolesController } from './roles/roles.controller';
 import { RolesService } from './roles/roles.service';
 
@@ -51,6 +49,7 @@ import { AuditModule } from './audit/audit.module';
 import { AdminInstallmentsController } from './installments/admin-installments.controller';
 
 import { NotificationsModule } from '../notifications/notifications.module';
+import { ReportsModule } from './reports/reports.module';
 
 @Module({
   imports: [
@@ -60,6 +59,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
     AuditModule,
     KycModule,
     NotificationsModule,
+    ReportsModule,
   ],
   controllers: [
     AdminAuthController,
@@ -68,7 +68,6 @@ import { NotificationsModule } from '../notifications/notifications.module';
     AdminUsersController,
     AdminCustomersController,
     AdminPaymentsController,
-    AuditController,
     RolesController,
     AdminCirclesController,
     AdminMembershipsController,
@@ -85,7 +84,6 @@ import { NotificationsModule } from '../notifications/notifications.module';
     AdminUsersService,
     AdminCustomersService,
     AdminPaymentsService,
-    AuditService,
     RolesService,
     AdminMembershipsService,
     AdminPayoutsService,

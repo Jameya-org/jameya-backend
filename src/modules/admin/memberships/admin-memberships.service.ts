@@ -8,6 +8,8 @@ import { QueryMembershipsDto } from './dto/query-memberships.dto';
 import { ReleaseMembershipDto } from './dto/release-membership.dto';
 import { MembershipStatus, Prisma } from '@prisma/client';
 
+import { MarkDefaultedDto } from './dto/mark-defaulted.dto';
+
 @Injectable()
 export class AdminMembershipsService {
   constructor(private readonly prisma: PrismaService) {}
@@ -122,4 +124,60 @@ export class AdminMembershipsService {
       };
     });
   }
+
+  /**
+   * Human decision endpoint to mark a delinquent membership as DEFAULTED.
+   * Requires reason (writes AuditEvent).
+   */
+  async markDefaulted(
+    id: string,
+    dto: MarkDefaultedDto,
+    adminId: string,
+    ipAddress?: string,
+  ) {
+    const membership = await this.prisma.membership.findUnique({
+      where: { id },
+    });
+
+    if (!membership) {
+      throw new NotFoundException(`Membership with ID ${id} not found`);
+    }
+
+    if (
+      membership.status !== MembershipStatus.ACTIVE &&
+      membership.status !== MembershipStatus.PENDING_SIGNATURE
+    ) {
+      throw new UnprocessableEntityException(
+        `Cannot mark membership as defaulted in status "${membership.status}".`,
+      );
+    }
+
+    return await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.membership.update({
+        where: { id },
+        data: {
+          status: MembershipStatus.DEFAULTED,
+        },
+      });
+
+      await tx.auditEvent.create({
+        data: {
+          actorAdminId: adminId,
+          entityType: 'membership',
+          entityId: id,
+          action: 'membership_marked_defaulted',
+          reason: dto.reason,
+          ipAddress,
+        },
+      });
+
+      return {
+        statusCode: 200,
+        message: 'Membership marked as DEFAULTED successfully',
+        membershipId: updated.id,
+        status: updated.status,
+      };
+    });
+  }
 }
+

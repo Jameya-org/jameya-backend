@@ -23,6 +23,7 @@ import { RequirePermissions } from '../auth/decorators/permissions.decorator';
 import { AdminMembershipsService } from './admin-memberships.service';
 import { QueryMembershipsDto } from './dto/query-memberships.dto';
 import { ReleaseMembershipDto } from './dto/release-membership.dto';
+import { MarkDefaultedDto } from './dto/mark-defaulted.dto';
 
 @ApiTags('Admin – Memberships (ADM-07 Exceptions)')
 @ApiBearerAuth('access-token')
@@ -66,4 +67,27 @@ export class AdminMembershipsController {
       req.ip,
     );
   }
+
+  @Post(':id/mark-defaulted')
+  @HttpCode(HttpStatus.OK)
+  @RequirePermissions('circles:configure')
+  @ApiOperation({
+    summary:
+      'Mark a delinquent membership as DEFAULTED — requires reason and writes audit log',
+  })
+  @ApiResponse({ status: 200, description: 'Membership marked as DEFAULTED' })
+  @ApiResponse({ status: 404, description: 'Membership not found' })
+  markDefaulted(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: MarkDefaultedDto,
+    @Req() req: any,
+  ) {
+    return this.adminMembershipsService.markDefaulted(
+      id,
+      dto,
+      req.user?.id,
+      req.ip,
+    );
+  }
 }
+
