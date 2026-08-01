@@ -1,12 +1,10 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { PrismaService } from 'src/prisma/prisma.service';
+import { PrismaService } from '../../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { ListCustomersQueryDto } from './dto/list-customers-query.dto';
 import { UpdateCustomerStatusDto } from './dto/update-customer-status.dto';
-import { Prisma } from '@prisma/client';
-
-import { NotificationService } from 'src/modules/notifications/notifications.service';
-import { NotificationType } from '@prisma/client';
+import { Prisma, NotificationType } from '@prisma/client';
+import { NotificationService } from '../../notifications/notifications.service';
 
 @Injectable()
 export class AdminCustomersService {
@@ -90,6 +88,15 @@ export class AdminCustomersService {
                 startDate: true,
               },
             },
+            installments: {
+              orderBy: { dueDate: 'asc' },
+              include: {
+                transactions: {
+                  orderBy: { createdAt: 'desc' },
+                  take: 1,
+                },
+              },
+            },
           },
           orderBy: { joinedAt: 'desc' },
         },
@@ -98,9 +105,63 @@ export class AdminCustomersService {
 
     if (!customer) throw new NotFoundException('Customer not found');
 
-    // Never expose internal fields to admin view
-    const { ...safe } = customer;
-    return safe;
+    // Aggregate installments across all memberships
+    const allInstallments = customer.memberships.flatMap((m) =>
+      m.installments.map((inst) => {
+        const lastTx = inst.transactions[0];
+        return {
+          id: inst.id,
+          membershipId: m.id,
+          circleId: m.circleId,
+          circleDurationMonths: m.circle.durationMonths,
+          circleAmount: inst.amount,
+          cycleNumber: inst.cycleNumber,
+          dueDate: inst.dueDate,
+          amount: inst.amount,
+          status: inst.status,
+          paidDate: inst.paidDate,
+          paymentChannel: lastTx ? lastTx.channelType : null,
+        };
+      }),
+    );
+
+    const totalInstallments = allInstallments.length;
+    const paidInstallments = allInstallments.filter((i) => i.status === 'PAID').length;
+    const overdueInstallments = allInstallments.filter((i) => i.status === 'OVERDUE').length;
+    const pendingInstallments = allInstallments.filter((i) => i.status === 'PENDING').length;
+
+    // Trust Score Calculation
+    const latestDecision = customer.eligibilityDecisions[0];
+    const score = latestDecision ? latestDecision.trustScore : 90;
+
+    const paymentCommitment =
+      totalInstallments > 0
+        ? Math.round((paidInstallments / totalInstallments) * 100)
+        : 100;
+
+    const identityVerification =
+      customer.identityProfile?.kycStatus === 'APPROVED'
+        ? 100
+        : customer.identityProfile?.kycStatus === 'UNDER_REVIEW' ||
+          customer.identityProfile?.kycStatus === 'PENDING'
+        ? 50
+        : 0;
+
+    return {
+      ...customer,
+      trustScore: {
+        score,
+        paymentCommitment,
+        identityVerification,
+      },
+      paymentsSummary: {
+        total: totalInstallments,
+        paid: paidInstallments,
+        overdue: overdueInstallments,
+        pending: pendingInstallments,
+      },
+      installments: allInstallments,
+    };
   }
 
   async updateCustomerStatus(
