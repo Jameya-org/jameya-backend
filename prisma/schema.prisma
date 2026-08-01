@@ -75,6 +75,7 @@ enum CircleStatus {
 }
 
 enum MembershipStatus {
+  PENDING_SIGNATURE
   ACTIVE
   COMPLETED
   DEFAULTED
@@ -92,6 +93,7 @@ enum TransactionType {
   INSTALLMENT_PAYMENT
   FEE_PAYMENT
   REFUND
+  COLLECTION
 }
 
 enum PaymentChannelType {
@@ -107,6 +109,8 @@ enum TransactionStatus {
   SETTLED
   FAILED
   REJECTED
+  PENDING_VERIFICATION
+  PENDING_MANUAL_REVIEW
 }
 
 enum ReviewStatus {
@@ -127,6 +131,8 @@ enum LedgerAccount {
   ESCROW_ACCOUNT
   FEE_REVENUE
   PAYOUT_OUTFLOW
+  COLLECTION_CLEARING
+  CUSTOMER_OBLIGATION
 }
 
 enum FeePolicyStatus {
@@ -135,6 +141,21 @@ enum FeePolicyStatus {
   RETIRED
 }
 
+enum NotificationType {
+  DOCUMENT_APPROVED
+  DOCUMENT_REJECTED
+  ELIGIBILITY_DECIDED
+  JOIN_CONFIRMED
+  CONTRACT_AVAILABLE
+  INSTALLMENT_DUE_SOON
+  INSTALLMENT_PAID
+  INSTALLMENT_FAILED
+  INSTALLMENT_OVERDUE
+  RESERVATION_EXPIRED
+  ACCOUNT_STATUS_CHANGED
+}
+
+
 // ==========================================
 // CUSTOMER & AUTHENTICATION
 // ==========================================
@@ -142,7 +163,7 @@ enum FeePolicyStatus {
 model Customer {
   id                   String                 @id @default(uuid()) @db.Uuid
   status               CustomerStatus         @default(ACTIVE)
-  mobileNumber         String?                @unique @map("mobile_number")
+  mobileNumber         String                 @unique @map("mobile_number")
   email                String?                @map("email")
   pinHash              String?                @map("pin_hash") // Quick access PIN / Biometric unlock
   legalName            String?                @map("legal_name")
@@ -195,7 +216,6 @@ model Document {
   customer            Customer        @relation(fields: [customerId], references: [id])
   reviewerAdmin       AdminUser?      @relation(fields: [reviewerAdminId], references: [id])
 
-  @@unique([customerId, docType])
   @@map("documents")
 }
 
@@ -226,11 +246,13 @@ model PaymentMethod {
   type               PaymentMethodType
   maskedDisplay      String            @map("masked_display")
   isDefault          Boolean           @default(false) @map("is_default")
+  verificationStatus String            @default("VERIFIED") @map("verification_status")
   expiryMetadata     Json?             @map("expiry_metadata")
   createdAt          DateTime          @default(now()) @map("created_at")
   removedAt          DateTime?         @map("removed_at")
 
   customer           Customer          @relation(fields: [customerId], references: [id])
+  memberships        Membership[]
 
   @@map("payment_methods")
 }
@@ -276,16 +298,20 @@ model Circle {
 }
 
 model Membership {
-  id                String           @id @default(uuid()) @db.Uuid
-  customerId        String           @map("customer_id") @db.Uuid
-  circleId          String           @map("circle_id") @db.Uuid
-  payoutPosition    Int              @map("payout_position")
-  status            MembershipStatus @default(ACTIVE)
-  joinedAt          DateTime         @default(now()) @map("joined_at") @db.Date
-  obligationSummary Json?            @map("obligation_summary")
+  id                      String           @id @default(uuid()) @db.Uuid
+  customerId              String           @map("customer_id") @db.Uuid
+  circleId                String           @map("circle_id") @db.Uuid
+  payoutPosition          Int              @map("payout_position")
+  status                  MembershipStatus @default(ACTIVE)
+  defaultPaymentMethodId  String?          @map("default_payment_method_id") @db.Uuid
+  reservedUntil           DateTime?        @map("reserved_until")
+  usedEligibilityOverride Boolean          @default(false) @map("used_eligibility_override")
+  joinedAt                DateTime         @default(now()) @map("joined_at") @db.Date
+  obligationSummary       Json?            @map("obligation_summary")
 
-  customer          Customer         @relation(fields: [customerId], references: [id])
-  circle            Circle           @relation(fields: [circleId], references: [id])
+  customer             Customer       @relation(fields: [customerId], references: [id])
+  circle               Circle         @relation(fields: [circleId], references: [id])
+  defaultPaymentMethod PaymentMethod? @relation(fields: [defaultPaymentMethodId], references: [id])
   
   installments      Installment[]
   contract          Contract?
@@ -307,6 +333,8 @@ model Installment {
   amount       Decimal           @db.Decimal(12, 2)
   status       InstallmentStatus @default(PENDING)
   paidDate     DateTime?         @map("paid_date") @db.Date
+  retryAttempt Int               @default(0) @map("retry_attempt")
+  nextRetryAt  DateTime?         @map("next_retry_at")
 
   membership   Membership        @relation(fields: [membershipId], references: [id])
   transactions Transaction[]
@@ -323,6 +351,7 @@ model Transaction {
   currency          String             @default("EGP")
   status            TransactionStatus  @default(PENDING)
   failureReason     String?            @map("failure_reason")
+  failureCategory   String?            @map("failure_category")
   providerReference String?            @map("provider_reference")
   idempotencyKey    String             @unique @map("idempotency_key")
   createdAt         DateTime           @default(now()) @map("created_at")
@@ -409,14 +438,17 @@ model Contract {
 // ==========================================
 
 model InAppNotification {
-  id         String   @id @default(uuid()) @db.Uuid
-  customerId String   @map("customer_id") @db.Uuid
-  title      String
-  body       String
-  isRead     Boolean  @default(false) @map("is_read")
-  createdAt  DateTime @default(now()) @map("created_at")
+  id                String           @id @default(uuid()) @db.Uuid
+  customerId        String           @map("customer_id") @db.Uuid
+  type              NotificationType
+  title             String
+  body              String
+  relatedEntityType String?          @map("related_entity_type")
+  relatedEntityId   String?          @map("related_entity_id")
+  isRead            Boolean          @default(false) @map("is_read")
+  createdAt         DateTime         @default(now()) @map("created_at")
 
-  customer   Customer @relation(fields: [customerId], references: [id])
+  customer          Customer         @relation(fields: [customerId], references: [id])
 
   @@map("in_app_notifications")
 }

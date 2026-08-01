@@ -7,6 +7,10 @@ import { CirclesModule } from './modules/circles/circles.module';
 import { AdminModule } from './modules/admin/admin.module';
 import { CustomersModule } from './modules/customers/customers.module';
 import { StorageModule } from './modules/storage/storage.module';
+import { PaymentsModule } from './modules/payments/payments.module';
+import { InstallmentsModule } from './modules/installments/installments.module';
+import { JobsModule } from './jobs/jobs.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
 import { validateEnv } from './config/env.validation';
 
 @Module({
@@ -19,6 +23,10 @@ import { validateEnv } from './config/env.validation';
     AdminModule,
     CustomersModule,
     StorageModule,
+    PaymentsModule,
+    InstallmentsModule,
+    JobsModule,
+    NotificationsModule,
   ],
 })
 export class AppModule {}

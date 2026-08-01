@@ -48,8 +48,8 @@ export class CreateIdentityProfileDto {
   @Type(() => AddressDto)
   address: AddressDto;
 
-  @ApiPropertyOptional({ example: '+201012345678', description: 'Customer mobile phone number' })
-  @IsOptional()
-  @IsMobilePhone()
-  mobileNumber?: string;
+  @ApiProperty({ example: '+201012345678', description: 'Customer primary mobile phone number' })
+  @IsNotEmpty({ message: 'mobileNumber is required to complete profile' })
+  @IsString()
+  mobileNumber: string;
 }

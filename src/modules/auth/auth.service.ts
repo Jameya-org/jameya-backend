@@ -6,9 +6,11 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
-import { PrismaService } from 'src/prisma/prisma.service';
+import { PrismaService } from '../../prisma/prisma.service';
 import type { IOtpProvider } from './providers/otp-provider.interface';
 import * as bcrypt from 'bcrypt';
+import { randomUUID } from 'crypto';
+
 
 @Injectable()
 export class AuthService {
@@ -147,7 +149,7 @@ export class AuthService {
       try {
         customer = await this.prisma.customer.create({
           data: {
-            mobileNumber: isEmail ? null : target,
+            mobileNumber: isEmail ? `PENDING_${randomUUID()}` : target,
             email: isEmail ? target : null,
             status: 'ACTIVE',
           },

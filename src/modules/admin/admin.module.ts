@@ -24,9 +24,14 @@ import { AdminUsersService } from './admin-users/admin-users.service';
 import { AdminCustomersController } from './customers/admin-customers.controller';
 import { AdminCustomersService } from './customers/admin-customers.service';
 
-// Payments
+// Payments & Transactions
 import { AdminPaymentsController } from './payments/admin-payments.controller';
 import { AdminPaymentsService } from './payments/admin-payments.service';
+import { AdminTransactionsController } from './transactions/admin-transactions.controller';
+
+// Payouts
+import { AdminPayoutsController } from './payouts/admin-payouts.controller';
+import { AdminPayoutsService } from './payouts/admin-payouts.service';
 
 // Audit & Roles
 import { AuditController } from './audit/audit.controller';
@@ -34,13 +39,18 @@ import { AuditService } from './audit/audit.service';
 import { RolesController } from './roles/roles.controller';
 import { RolesService } from './roles/roles.service';
 
-// Admin Circles
+// Admin Circles & Memberships
 import { AdminCirclesController } from './circles/admin-circles.controller';
+import { AdminMembershipsController } from './memberships/admin-memberships.controller';
+import { AdminMembershipsService } from './memberships/admin-memberships.service';
 import { CirclesModule } from '../circles/circles.module';
 
 // KYC (has its own module with AuditModule imported inside)
-import { AuditModule } from './audit/audit.module';
 import { KycModule } from './kyc/kyc.module';
+import { AuditModule } from './audit/audit.module';
+import { AdminInstallmentsController } from './installments/admin-installments.controller';
+
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [
@@ -49,6 +59,7 @@ import { KycModule } from './kyc/kyc.module';
     CirclesModule,
     AuditModule,
     KycModule,
+    NotificationsModule,
   ],
   controllers: [
     AdminAuthController,
@@ -60,6 +71,10 @@ import { KycModule } from './kyc/kyc.module';
     AuditController,
     RolesController,
     AdminCirclesController,
+    AdminMembershipsController,
+    AdminInstallmentsController,
+    AdminTransactionsController,
+    AdminPayoutsController,
   ],
   providers: [
     AdminAuthService,
@@ -72,7 +87,16 @@ import { KycModule } from './kyc/kyc.module';
     AdminPaymentsService,
     AuditService,
     RolesService,
+    AdminMembershipsService,
+    AdminPayoutsService,
   ],
-  exports: [AdminAuthService, AdminUsersService, RolesService, AuditModule],
+  exports: [
+    AdminAuthService,
+    AdminUsersService,
+    RolesService,
+    AuditModule,
+    AdminMembershipsService,
+    AdminPayoutsService,
+  ],
 })
 export class AdminModule {}

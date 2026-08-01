@@ -4,8 +4,10 @@ import { KycService } from './kyc.service';
 import { CustomersRepository } from 'src/modules/customers/customers.repository';
 import { AuditModule } from '../audit/audit.module';
 
+import { NotificationsModule } from 'src/modules/notifications/notifications.module';
+
 @Module({
-  imports: [AuditModule],
+  imports: [AuditModule, NotificationsModule],
   controllers: [KycController],
   providers: [KycService, CustomersRepository],
 })

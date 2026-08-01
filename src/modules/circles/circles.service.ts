@@ -5,9 +5,9 @@ import {
   UnprocessableEntityException,
   ConflictException,
 } from '@nestjs/common';
-import { PrismaService } from 'src/prisma/prisma.service';
+import { PrismaService } from '../../prisma/prisma.service';
 import { CreateCircleDto } from './dto/create-circle.dto';
-import { CircleStatus, FeePolicyStatus, Prisma } from '@prisma/client';
+import { CircleStatus, CycleFrequency, FeePolicyStatus, Prisma } from '@prisma/client';
 import { AuditService } from '../admin/audit/audit.service';
 
 const ALLOWED_DURATIONS = [6, 10, 12];
@@ -39,18 +39,23 @@ export class CirclesService {
       );
     }
 
+    // Auto-assign memberCapacity from durationMonths if omitted
+    const memberCapacity = dto.memberCapacity ?? dto.durationMonths;
+    // Auto-assign cycleFrequency to MONTHLY if omitted
+    const cycleFrequency = dto.cycleFrequency ?? CycleFrequency.MONTHLY;
+
     // 2. Validate memberCapacity === durationMonths for standard monthly circles
-    if (dto.memberCapacity !== dto.durationMonths) {
+    if (memberCapacity !== dto.durationMonths) {
       throw new BadRequestException(
-        `memberCapacity (${dto.memberCapacity}) must equal durationMonths (${dto.durationMonths}) for standard monthly circles.`,
+        `memberCapacity (${memberCapacity}) must equal durationMonths (${dto.durationMonths}) for standard monthly circles.`,
       );
     }
 
     // 3. Business logic: total amount must equal contributionAmount × memberCapacity
-    const expectedTotal = dto.contributionAmount * dto.memberCapacity;
+    const expectedTotal = dto.contributionAmount * memberCapacity;
     if (Number(dto.amount) !== expectedTotal) {
       throw new BadRequestException(
-        `Total amount (${dto.amount}) must equal contribution (${dto.contributionAmount}) × capacity (${dto.memberCapacity}) = ${expectedTotal}`,
+        `Total amount (${dto.amount}) must equal contribution (${dto.contributionAmount}) × capacity (${memberCapacity}) = ${expectedTotal}`,
       );
     }
 
@@ -79,8 +84,8 @@ export class CirclesService {
         amount: dto.amount,
         contributionAmount: dto.contributionAmount,
         durationMonths: dto.durationMonths,
-        memberCapacity: dto.memberCapacity,
-        cycleFrequency: dto.cycleFrequency ?? 'MONTHLY',
+        memberCapacity,
+        cycleFrequency,
         startDate: start,
         endDate: end,
         status: CircleStatus.DRAFT,
@@ -102,7 +107,7 @@ export class CirclesService {
       newValue: circle as unknown as Record<string, any>,
     });
 
-    return circle;
+    return this.getCircleById(circle.id);
   }
 
   async getAllCircles(status?: CircleStatus) {
@@ -133,7 +138,11 @@ export class CirclesService {
                 email: true,
               },
             },
+            installments: {
+              orderBy: { cycleNumber: 'asc' },
+            },
           },
+          orderBy: { payoutPosition: 'asc' },
         },
       },
     });
@@ -142,7 +151,147 @@ export class CirclesService {
       throw new NotFoundException(`Circle with ID ${id} not found`);
     }
 
-    return circle;
+    const circleCode = `JMY-${new Date(circle.startDate).getFullYear()}-${id.slice(0, 6).toUpperCase()}`;
+
+    // Flatten all installments across all memberships
+    const allInstallments = circle.memberships.flatMap((m) => m.installments);
+
+    const totalValue = Number(circle.amount);
+    const totalCollectedAmount = allInstallments
+      .filter((inst) => inst.status === 'PAID')
+      .reduce((sum, inst) => sum + Number(inst.amount), 0);
+
+    const totalRemainingAmount = Math.max(0, totalValue - totalCollectedAmount);
+    const completionPercentage =
+      totalValue > 0 ? Math.min(100, Math.round((totalCollectedAmount / totalValue) * 100)) : 0;
+
+    // Determine current active cycle number (earliest cycle with non-PAID installments, or default to 1)
+    const unpaidCycleNumbers = allInstallments
+      .filter((inst) => inst.status !== 'PAID')
+      .map((inst) => inst.cycleNumber);
+
+    const currentCycleNumber =
+      unpaidCycleNumbers.length > 0 ? Math.min(...unpaidCycleNumbers) : 1;
+
+    // Current month collection metrics
+    const currentCycleInstallments = allInstallments.filter(
+      (inst) => inst.cycleNumber === currentCycleNumber,
+    );
+    const currentMonthPaidInstallments = currentCycleInstallments.filter(
+      (inst) => inst.status === 'PAID',
+    );
+    const currentMonthCollectedAmount = currentMonthPaidInstallments.reduce(
+      (sum, inst) => sum + Number(inst.amount),
+      0,
+    );
+    const currentMonthTargetAmount =
+      Number(circle.contributionAmount) * circle.memberCapacity;
+
+    // Format Members list with current cycle payment status
+    const members = circle.memberships.map((m) => {
+      const currentInst = m.installments.find(
+        (inst) => inst.cycleNumber === currentCycleNumber,
+      );
+      const paidCount = m.installments.filter((inst) => inst.status === 'PAID').length;
+
+      return {
+        id: m.id,
+        customerId: m.customerId,
+        legalName: m.customer?.legalName || 'N/A',
+        mobileNumber: m.customer?.mobileNumber || 'N/A',
+        email: m.customer?.email || null,
+        payoutPosition: m.payoutPosition,
+        membershipStatus: m.status,
+        currentCycleStatus: currentInst ? currentInst.status : 'PENDING',
+        paidInstallmentsCount: paidCount,
+        totalInstallmentsCount: m.installments.length,
+      };
+    });
+
+    // Build Payments / Collection Rounds summary by cycle (1 to durationMonths)
+    const cycles = Array.from({ length: circle.durationMonths }, (_, i) => {
+      const cycleNum = i + 1;
+      const cycleInsts = allInstallments.filter((inst) => inst.cycleNumber === cycleNum);
+
+      // Determine due date from existing installments or calculate from startDate
+      let dueDate: Date;
+      if (cycleInsts.length > 0 && cycleInsts[0].dueDate) {
+        dueDate = cycleInsts[0].dueDate;
+      } else {
+        dueDate = new Date(circle.startDate);
+        dueDate.setMonth(dueDate.getMonth() + i);
+      }
+
+      const paidCount = cycleInsts.filter((inst) => inst.status === 'PAID').length;
+      const pendingCount = cycleInsts.filter((inst) => inst.status === 'PENDING').length;
+      const overdueCount = cycleInsts.filter((inst) => inst.status === 'OVERDUE').length;
+      const failedCount = cycleInsts.filter((inst) => inst.status === 'FAILED').length;
+
+      const cycleCollectedAmount = cycleInsts
+        .filter((inst) => inst.status === 'PAID')
+        .reduce((sum, inst) => sum + Number(inst.amount), 0);
+
+      const cycleTotalAmount =
+        cycleInsts.length > 0
+          ? cycleInsts.reduce((sum, inst) => sum + Number(inst.amount), 0)
+          : Number(circle.contributionAmount) * circle.memberCapacity;
+
+      let cycleStatus: 'COMPLETED' | 'PARTIAL' | 'OVERDUE' | 'UPCOMING';
+      if (paidCount > 0 && paidCount === (cycleInsts.length || circle.memberCapacity)) {
+        cycleStatus = 'COMPLETED';
+      } else if (overdueCount > 0 || failedCount > 0) {
+        cycleStatus = 'OVERDUE';
+      } else if (paidCount > 0) {
+        cycleStatus = 'PARTIAL';
+      } else {
+        cycleStatus = 'UPCOMING';
+      }
+
+      return {
+        cycleNumber: cycleNum,
+        dueDate,
+        status: cycleStatus,
+        totalAmount: cycleTotalAmount,
+        collectedAmount: cycleCollectedAmount,
+        paidCount,
+        pendingCount,
+        overdueCount,
+        failedCount,
+        totalMembersCount: cycleInsts.length || circle.memberCapacity,
+      };
+    });
+
+    const completedRounds = cycles.filter((c) => c.status === 'COMPLETED').length;
+    const partialRounds = cycles.filter((c) => c.status === 'PARTIAL').length;
+    const overdueRounds = cycles.filter((c) => c.status === 'OVERDUE').length;
+    const upcomingRounds = cycles.filter((c) => c.status === 'UPCOMING').length;
+
+    return {
+      ...circle,
+      circleCode,
+      overview: {
+        totalValue,
+        collectedAmount: totalCollectedAmount,
+        remainingAmount: totalRemainingAmount,
+        completionPercentage,
+        currentMonthGauge: {
+          currentCycleNumber,
+          targetAmount: currentMonthTargetAmount,
+          collectedAmount: currentMonthCollectedAmount,
+          paidCount: currentMonthPaidInstallments.length,
+          totalMembersCount: circle.memberCapacity,
+        },
+      },
+      formattedMembers: members,
+      paymentsSummary: {
+        totalRounds: circle.durationMonths,
+        completedRounds,
+        partialRounds,
+        overdueRounds,
+        upcomingRounds,
+        cycles,
+      },
+    };
   }
 
   /**
@@ -222,8 +371,12 @@ export class CirclesService {
     if (updateData.amount !== undefined) dataToUpdate.amount = updateData.amount;
     if (updateData.contributionAmount !== undefined)
       dataToUpdate.contributionAmount = updateData.contributionAmount;
-    if (updateData.durationMonths !== undefined)
+    if (updateData.durationMonths !== undefined) {
       dataToUpdate.durationMonths = updateData.durationMonths;
+      if (updateData.memberCapacity === undefined) {
+        dataToUpdate.memberCapacity = updateData.durationMonths;
+      }
+    }
     if (updateData.memberCapacity !== undefined)
       dataToUpdate.memberCapacity = updateData.memberCapacity;
     if (updateData.startDate !== undefined) {

@@ -27,17 +27,22 @@ export class CustomersService {
     // (record not found) if the customer doesn't exist, eliminating the
     // TOCTOU race that a pre-transaction findUnique check would introduce.
     return this.prisma.$transaction(async (tx) => {
-      // Update customer legal name (and phone if provided) — throws if customer doesn't exist
+      // Update customer legal name and mobileNumber — throws if customer doesn't exist
       const customer = await tx.customer.update({
         where: { id: customerId },
         data: {
           legalName: dto.legalName,
-          ...(dto.mobileNumber ? { mobileNumber: dto.mobileNumber } : {}),
+          mobileNumber: dto.mobileNumber,
         },
         include: { identityProfile: true },
       }).catch((e) => {
-        if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2025') {
-          throw new NotFoundException('Customer not found');
+        if (e instanceof Prisma.PrismaClientKnownRequestError) {
+          if (e.code === 'P2025') {
+            throw new NotFoundException('Customer not found');
+          }
+          if (e.code === 'P2002') {
+            throw new ConflictException('Mobile number is already registered to another account');
+          }
         }
         throw e;
       });
