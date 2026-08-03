@@ -23,8 +23,14 @@ resource "aws_launch_template" "app_tier" {
 
   user_data = base64encode(<<-EOF
               #!/bin/bash
-              echo "Hello World from ${var.project_name}!" > index.html
-              python3 -m http.server 80 &
+              dnf update -y
+              dnf install docker -y
+              dnf install docker-compose-plugin -y
+
+              systemctl enable docker
+              systemctl start docker
+
+              usermod -aG docker ec2-user
               EOF
   )
 
@@ -42,10 +48,10 @@ resource "aws_launch_template" "app_tier" {
 
 # Auto Scaling Group managing EC2 instances across 2 private subnets
 resource "aws_autoscaling_group" "app_asg" {
-  name_prefix         = "${var.project_name}-asg-"
-  desired_capacity    = var.desired_capacity
-  min_size            = var.min_size
-  max_size            = var.max_size
+  name_prefix      = "${var.project_name}-asg-"
+  desired_capacity = var.desired_capacity
+  min_size         = var.min_size
+  max_size         = var.max_size
   vpc_zone_identifier = [
     var.private_sub_1a_id,
     var.private_sub_2a_id
