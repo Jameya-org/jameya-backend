@@ -18,3 +18,8 @@ variable "private_sub_1a_id" {}
 variable "private_sub_2a_id" {}
 variable "private_servers_sg" {}
 variable "app_tg_arn" {}
+variable "instance_profile_name" {
+  description = "IAM Instance Profile name for EC2"
+  type        = string
+}
+
