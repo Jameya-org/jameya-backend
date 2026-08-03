@@ -34,10 +34,11 @@ module "ALB" {
 }
 
 module "asg" {
-  source             = "./../modules/asg"
-  project_name       = var.project_name
-  private_sub_1a_id  = module.vpc.private_sub_1a_id
-  private_sub_2a_id  = module.vpc.private_sub_2a_id
-  private_servers_sg = module.security_group.private_servers_sg_id
-  app_tg_arn         = module.ALB.app_tg_arn
+  source                = "./../modules/asg"
+  project_name          = var.project_name
+  private_sub_1a_id     = module.vpc.private_sub_1a_id
+  private_sub_2a_id     = module.vpc.private_sub_2a_id
+  private_servers_sg    = module.security_group.private_servers_sg_id
+  app_tg_arn            = module.ALB.app_tg_arn
+  instance_profile_name = module.IAM.instance_profile_name
 }
